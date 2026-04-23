@@ -1,7 +1,7 @@
 export interface Player {
   id: string;
   name: string;
-  buyIn: number;
+  buy_in: number;
   chips: number; // Final chip count at the end of the night
   result?: number;
 }
