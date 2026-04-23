@@ -5,7 +5,7 @@ import { Player } from "@/types/poker"
 import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddPlayerDrawer } from "@/components/AddPlayerDrawer"
 import { CashOutDrawer } from "@/components/CashOutDrawer"
-import { Trash2 } from "lucide-react"
+import { Trash2, RefreshCw } from "lucide-react"
 
 const SESSION_ID = "43dfbd26-08fb-4436-b9ac-8485b7e81a58" 
 
@@ -46,6 +46,17 @@ export default function PokerDashboard() {
     if (error) { console.error("Update error:", error); return; }
     setPlayers(prev => prev.map(p => p.id === id ? { ...p, chips } : p));
   };
+
+  const handleReload = async (player: Player, amount: number) => {
+    const newBuyIn = Number(player.buy_in) + amount;
+    const { error } = await supabase
+      .from('players')
+      .update({ buy_in: newBuyIn })
+      .eq('id', player.id);
+
+    if (error) { console.error("Reload error:", error); return; }
+    setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, buy_in: newBuyIn } : p));
+  };
   
   const removePlayer = async (id: string) => {
     const { error } = await supabase
@@ -53,11 +64,19 @@ export default function PokerDashboard() {
       .delete()
       .eq('id', id);
 
-    if (error) {
-      console.error("Error deleting player:", error);
-      return;
-    }
+    if (error) { console.error("Error deleting player:", error); return; }
     setPlayers((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const resetTable = async () => {
+    if (confirm("Wipe all players and start a fresh game?")) {
+      const { error } = await supabase
+        .from('players')
+        .delete()
+        .eq('session_id', SESSION_ID);
+      
+      if (!error) setPlayers([]);
+    }
   };
 
   // --- DERIVED MATH ---
@@ -78,7 +97,7 @@ export default function PokerDashboard() {
   if (loading) return <div className="p-10 text-center text-zinc-500 font-sans">Loading game...</div>
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 p-4 pb-32">
+    <main className="min-h-screen bg-zinc-950 text-zinc-50 p-4 pb-40">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Friday Night Poker</h1>
         <p className="text-zinc-400">Total Pot: <span className="text-green-500 font-mono">${totalPot.toFixed(2)}</span></p>
@@ -115,13 +134,8 @@ export default function PokerDashboard() {
           const net = (Number(player.chips) || 0) - Number(player.buy_in);
           return (
             <Card key={player.id} className="bg-zinc-900 border-zinc-800 relative overflow-hidden group">
-              {/* Trash icon specifically tied to this player.id */}
               <button 
-                onClick={() => {
-                  if(confirm(`Remove ${player.name}?`)) {
-                    removePlayer(player.id)
-                  }
-                }}
+                onClick={() => { if(confirm(`Remove ${player.name}?`)) removePlayer(player.id) }}
                 className="absolute top-3 right-3 text-zinc-700 hover:text-red-500 transition-colors z-10 p-1"
               >
                 <Trash2 size={16} />
@@ -130,7 +144,15 @@ export default function PokerDashboard() {
               <CardHeader className="flex flex-row items-center justify-between py-5 px-5">
                 <div className="pr-4">
                   <CardTitle className="text-lg font-semibold">{player.name}</CardTitle>
-                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">Bought in for ${player.buy_in}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[11px] text-zinc-500 font-mono">In: ${player.buy_in}</p>
+                    <button 
+                      onClick={() => handleReload(player, 5)}
+                      className="text-[9px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-700 transition-all active:scale-95"
+                    >
+                      +$5
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="flex flex-col items-end gap-2">
@@ -151,6 +173,19 @@ export default function PokerDashboard() {
           );
         })}
       </div>
+
+      {/* RESET TABLE BUTTON */}
+      {players.length > 0 && (
+        <div className="mt-12 mb-8 px-4">
+          <button 
+            onClick={resetTable}
+            className="w-full py-4 text-xs font-bold uppercase tracking-[0.2em] text-zinc-600 hover:text-red-500 transition-colors border border-dashed border-zinc-800 rounded-2xl flex items-center justify-center gap-2"
+          >
+            <RefreshCw size={14} />
+            Reset Table for New Game
+          </button>
+        </div>
+      )}
 
       <div className="fixed bottom-6 left-0 right-0 px-4 flex justify-center pointer-events-none">
         <div className="pointer-events-auto">
