@@ -1,23 +1,58 @@
 'use client'
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
 import { Player } from "@/types/poker"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddPlayerDrawer } from "@/components/AddPlayerDrawer"
 
-export default function PokerDashboard() {
-  const [players, setPlayers] = useState<Player[]>([])
+const SESSION_ID = "43dfbd26-08fb-4436-b9ac-8485b7e81a58" 
 
-  const addPlayer = (name: string, buyIn: number) => {
-    const newPlayer: Player = {
-      id: crypto.randomUUID(),
-      name,
-      buyIn,
-      chips: 0,
+export default function PokerDashboard() {
+  // 2. State hooks always go at the very top
+  const [players, setPlayers] = useState<Player[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // 3. Place your useEffect here (runs once when the component mounts)
+  useEffect(() => {
+    const fetchPlayers = async () => {
+      const { data } = await supabase
+        .from('players')
+        .select('*')
+        .eq('session_id', SESSION_ID) // Important: Filter by your session!
+        .order('created_at', { ascending: true })
+      
+      if (data) setPlayers(data)
+      setLoading(false)
     }
-    setPlayers([...players, newPlayer])
+    fetchPlayers()
+  }, [])
+
+  // 4. Place your addPlayer function here
+  const addPlayer = async (name: string, buyIn: number) => {
+    const { data, error } = await supabase
+      .from('players')
+      .insert([{ 
+        name, 
+        buy_in: buyIn, 
+        session_id: SESSION_ID,
+        chips: 0 
+      }])
+      .select()
+
+    if (error) {
+      console.error("Error adding player:", error)
+      return
+    }
+
+    if (data) {
+      setPlayers((prev) => [...prev, ...data])
+    }
   }
 
-  const totalPot = players.reduce((sum, p) => sum + p.buyIn, 0)
+  // 5. Derived state (math) goes just before the return
+  const totalPot = players.reduce((sum, p) => sum + Number(p.buy_in), 0)
+
+  if (loading) return <div className="p-10 text-center">Loading game...</div>
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50 p-4 pb-24">

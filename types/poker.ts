@@ -3,6 +3,7 @@ export interface Player {
   name: string;
   buyIn: number;
   chips: number; // Final chip count at the end of the night
+  result?: number;
 }
 
 export interface PokerSession {
