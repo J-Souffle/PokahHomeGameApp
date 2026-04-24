@@ -9,54 +9,55 @@ export default function PlayerLiveView() {
   const [session, setSession] = useState<any>(null)
   const [myResult, setMyResult] = useState<any>(null)
   const [stats, setStats] = useState({ totalPlayers: 0, totalRebuys: 0 })
-  const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // 1. Get Session Rules
     const { data: sess } = await supabase.from('poker_sessions').select('*').eq('id', sessionId).single()
     setSession(sess)
 
-    // 2. Get Results (Separate fetch to avoid profiles_1 join error)
     const { data: allResults } = await supabase.from('player_results').select('*').eq('session_id', sessionId)
-    
     if (allResults) {
       const me = allResults.find(r => r.user_id === user.id)
-      setMyResult(me)
+      const { data: profile } = await supabase.from('profiles').select('display_name').eq('id', user.id).single()
+      setMyResult(me ? { ...me, display_name: profile?.display_name } : null)
       setStats({
         totalPlayers: allResults.length,
         totalRebuys: allResults.reduce((acc, r) => acc + (r.rebuys || 0), 0)
       })
-
-      // 3. Fetch Display Name separately
-      const { data: profile } = await supabase.from('profiles').select('display_name').eq('id', user.id).single()
-      if (profile && me) {
-        setMyResult({ ...me, display_name: profile.display_name })
-      }
     }
-    setLoading(false)
   }, [sessionId, supabase])
 
   useEffect(() => {
-    fetchData()
-    const channel = supabase
-      .channel(`player-sync-${sessionId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_results', filter: `session_id=eq.${sessionId}` }, fetchData)
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [sessionId, fetchData, supabase])
+  fetchData();
 
-  // THE NEW BUTTON LOGIC
+  const channel = supabase
+    .channel(`player-session-sync-${sessionId}`)
+    // Listen for players joining/paying
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'player_results', 
+      filter: `session_id=eq.${sessionId}` 
+    }, fetchData)
+    // Listen for the Host hitting "Start Engine"
+    .on('postgres_changes', { 
+      event: 'UPDATE', 
+      schema: 'public', 
+      table: 'poker_sessions', 
+      filter: `id=eq.${sessionId}` 
+    }, (payload) => {
+      console.log("Session status updated!", payload.new.status);
+      fetchData();
+    })
+    .subscribe();
+
+  return () => { supabase.removeChannel(channel) };
+}, [sessionId, fetchData, supabase]);
+
   const handleMarkAsPaid = async () => {
-    if (!myResult) return
-    const { error } = await supabase
-      .from('player_results')
-      .update({ has_paid: true })
-      .eq('id', myResult.id)
-    
-    if (error) console.error("Payment sync failed:", error.message)
+    if (myResult) await supabase.from('player_results').update({ has_paid: true }).eq('id', myResult.id)
   }
 
   const potSize = useMemo(() => {
@@ -64,54 +65,29 @@ export default function PlayerLiveView() {
     return (stats.totalPlayers + stats.totalRebuys) * session.buy_in
   }, [session, stats])
 
-  if (loading || !myResult) return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="text-white font-mono animate-pulse uppercase text-xs tracking-widest">Entering Lab...</div>
-    </div>
-  )
+  if (!myResult) return <div className="min-h-screen bg-zinc-950 text-white p-8 font-mono animate-pulse">Syncing...</div>
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6 font-sans">
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-black italic uppercase tracking-tighter">
-          {myResult.display_name || 'Anonymous'}
-        </h1>
-        <p className="text-zinc-500 text-[10px] font-mono uppercase mt-1">Room: {session?.join_code}</p>
+    <div className="min-h-screen bg-zinc-950 text-white p-6">
+      <div className="text-center mb-10">
+        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${session?.status === 'active' ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-yellow-500/10 border-yellow-500 text-yellow-500'}`}>
+          {session?.status === 'active' ? '● Game Live' : 'Waiting for Host'}
+        </span>
+        <h1 className="text-2xl font-black italic uppercase mt-4">{myResult.display_name}</h1>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 mb-6 shadow-2xl">
-        <p className="text-zinc-500 text-[10px] font-black uppercase text-center mb-1">Total Pot</p>
-        <p className="text-5xl font-black text-white text-center tracking-tighter">${potSize}</p>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 mb-6 text-center">
+        <p className="text-zinc-500 text-[10px] font-black uppercase">Total Pot</p>
+        <p className="text-5xl font-black">${potSize}</p>
       </div>
 
-      <div className="space-y-4">
-        {/* PAYMENT STATUS CARD WITH BUTTON */}
-        <div className={`p-6 rounded-3xl border flex items-center justify-between transition-all ${
-          myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'
-        }`}>
-          <div>
-            <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Your Tab</p>
-            <p className={`text-sm font-black italic uppercase ${myResult.has_paid ? 'text-green-500' : 'text-red-500'}`}>
-              {myResult.has_paid ? 'Paid' : 'Unpaid'}
-            </p>
-          </div>
-
-          {!myResult.has_paid && (
-            <button 
-              onClick={handleMarkAsPaid}
-              className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase italic hover:bg-zinc-200 active:scale-95 shadow-lg"
-            >
-              Mark as Paid
-            </button>
-          )}
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl flex justify-between items-center">
-          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Investment</p>
-          <p className="text-xl font-black text-yellow-500 italic">
-            ${(1 + (myResult.rebuys || 0)) * (session?.buy_in || 0)}
-          </p>
-        </div>
+      <div className={`p-6 rounded-3xl border flex items-center justify-between mb-4 ${myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+        <p className="text-[10px] font-black uppercase text-zinc-500">Status</p>
+        {myResult.has_paid ? (
+          <span className="text-green-500 font-black italic uppercase text-xs">Paid</span>
+        ) : (
+          <button onClick={handleMarkAsPaid} className="bg-white text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase">I have Paid</button>
+        )}
       </div>
     </div>
   )
