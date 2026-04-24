@@ -1,145 +1,149 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+'use client' // We move to Client for Recharts and Delete interaction
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/client'
 import Link from 'next/link'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-export default async function DashboardPage() {
-  const cookieStore = await cookies()
-  
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-      },
+export default function DashboardPage() {
+  const supabase = createClient()
+  const [user, setUser] = useState<any>(null)
+  const [results, setResults] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function getData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return (window.location.href = '/login')
+      setUser(user)
+
+      const { data } = await supabase
+        .from('player_results')
+        .select(`
+          id,
+          net_profit, 
+          is_winner, 
+          created_at,
+          poker_sessions!fk_session (game_name)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true }) // Ascending for the graph logic
+
+      setResults(data || [])
+      setLoading(false)
     }
-  )
+    getData()
+  }, [])
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this session record?")) return
+    const { error } = await supabase.from('player_results').delete().eq('id', id)
+    if (!error) setResults(results.filter(r => r.id !== id))
   }
 
-  // Fetch results WITH the specific relationship hint
-  const { data: results, error } = await supabase
-    .from('player_results')
-    .select(`
-      net_profit, 
-      is_winner, 
-      created_at,
-      poker_sessions!fk_session (
-        game_name
-      )
-    `)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });   
+  // --- MATH & GRAPH LOGIC ---
+  const displayResults = [...results].reverse() // Reverse for the table to show newest first
+  const sessionsPlayed = results.length
+  const totalProfit = results.reduce((acc, row) => acc + Number(row.net_profit), 0)
+  const wins = results.filter(row => row.is_winner).length
+  const winRate = sessionsPlayed > 0 ? ((wins / sessionsPlayed) * 100).toFixed(1) : 0
 
-  // --- DEBUG LOGS (Check your terminal) ---
-  console.log("--- DASHBOARD DEBUG ---");
-  console.log("DB Error:", error);
-  console.log("Raw Results Count:", results?.length || 0);
-  console.log("------------------------");
+  // Graph Data: Cumulative Profit over time
+  let cumulative = 0
+  const chartData = results.map(row => {
+    cumulative += Number(row.net_profit)
+    return {
+      date: new Date(row.created_at).toLocaleDateString(),
+      profit: cumulative
+    }
+  })
 
-  // --- MATH LOGIC ---
-  const sessionsPlayed = results?.length || 0;
-  const totalProfit = results?.reduce((acc, row) => acc + Number(row.net_profit), 0) || 0;
-  
-  const wins = results?.filter(row => row.is_winner).length || 0;
-  const winRate = sessionsPlayed > 0 ? ((wins / sessionsPlayed) * 100).toFixed(1) : 0;
+  if (loading) return <div className="p-8 text-white">Loading Stats...</div>
 
   return (
     <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Poker Stats</h1>
-          <p className="text-zinc-500 mt-1">Player: {user.email}</p>
+          <h1 className="text-3xl font-black italic tracking-tighter uppercase">Player Dashboard</h1>
+          <p className="text-zinc-500 mt-1">{user?.email}</p>
         </div>
         
-        <div className="flex gap-4">
-          <Link 
-            href="/dashboard/leaderboard" 
-            className="bg-zinc-800 hover:bg-zinc-700 text-white px-5 py-2.5 rounded-xl font-semibold transition-all"
-          >
+        <div className="flex gap-3">
+          <Link href="/dashboard/settings" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl font-bold transition-all">
+            ⚙️ Settings
+          </Link>
+          <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl font-bold transition-all">
             🏆 Leaderboard
           </Link>
-          <Link 
-            href="/dashboard/log-session" 
-            className="bg-green-600 hover:bg-green-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-green-900/20"
-          >
-            + Log Session
+          <Link href="/dashboard/log-session" className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-black italic transition-all hover:bg-yellow-400">
+            + LOG SESSION
           </Link>
         </div>
       </div>
       
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl text-center">
-          <h3 className="text-zinc-500 text-sm font-medium">Total Profit</h3>
-          <p className={`text-3xl font-bold mt-2 ${totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {totalProfit >= 0 ? `+$${totalProfit.toFixed(2)}` : `-$${Math.abs(totalProfit).toFixed(2)}`}
-          </p>
-        </div>
-
-        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl text-center">
-          <h3 className="text-zinc-500 text-sm font-medium">Win Rate</h3>
-          <p className="text-3xl font-bold mt-2 text-blue-400">{winRate}%</p>
-        </div>
-
-        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl text-center">
-          <h3 className="text-zinc-500 text-sm font-medium">Sessions Played</h3>
-          <p className="text-3xl font-bold mt-2 text-zinc-100">{sessionsPlayed}</p>
+      {/* Recharts Profit Graph */}
+      <div className="mb-8 bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 shadow-2xl">
+        <h3 className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-4">Bankroll Progression</h3>
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+              <XAxis dataKey="date" hide />
+              <YAxis stroke="#52525b" fontSize={12} tickFormatter={(v) => `$${v}`} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px' }}
+                itemStyle={{ color: '#eab308', fontWeight: 'bold' }}
+              />
+              <Line type="monotone" dataKey="profit" stroke="#eab308" strokeWidth={4} dot={{ r: 4, fill: '#eab308' }} activeDot={{ r: 8 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Session History Table */}
-      <div className="mt-12 bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
-        <div className="p-6 border-b border-zinc-800">
-          <h2 className="text-xl font-bold">Recent Sessions</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 text-center">
+          <h3 className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Total Profit</h3>
+          <p className={`text-4xl font-black mt-2 ${totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {totalProfit >= 0 ? `+$${totalProfit.toFixed(2)}` : `-$${Math.abs(totalProfit).toFixed(2)}`}
+          </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="text-zinc-500 text-sm border-b border-zinc-800">
-                <th className="p-4 font-medium">Game Name</th>
-                <th className="p-4 font-medium text-center">Date</th>
-                <th className="p-4 font-medium text-right">Profit</th>
-              </tr>
-            </thead>
-           <tbody>
-  {results && results.length > 0 ? (
-    results.map((row: any, i) => {
-      // Try the hinted key first, then fall back to the standard key
-      const sessionData = row['poker_sessions!fk_session'] || row['poker_sessions'];
-      const gameName = sessionData?.game_name || "Unnamed Session";
+        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 text-center">
+          <h3 className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Win Rate</h3>
+          <p className="text-4xl font-black mt-2 text-yellow-500">{winRate}%</p>
+        </div>
+        <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 text-center">
+          <h3 className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Sessions</h3>
+          <p className="text-4xl font-black mt-2">{sessionsPlayed}</p>
+        </div>
+      </div>
 
-      return (
-        <tr key={i} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20 transition-colors">
-          <td className="p-4 font-semibold">
-            {gameName}
-          </td>
-          <td className="p-4 text-zinc-400 text-sm text-center">
-            {row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A'}
-          </td>
-          <td className={`p-4 text-right font-bold ${Number(row.net_profit) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {Number(row.net_profit) >= 0 ? `+$${row.net_profit}` : `-$${Math.abs(Number(row.net_profit))}`}
-          </td>
-        </tr>
-      );
-    })
-  ) : (
-    <tr>
-      <td colSpan={3} className="p-8 text-center text-zinc-500">
-        No sessions logged yet.
-      </td>
-    </tr>
-  )}
-</tbody>
-          </table>
-        </div>
+      <div className="mt-12 bg-zinc-900 rounded-3xl border border-zinc-800 overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="text-zinc-500 text-xs uppercase tracking-widest border-b border-zinc-800">
+              <th className="p-6 font-bold">Game</th>
+              <th className="p-6 font-bold text-center">Date</th>
+              <th className="p-6 font-bold text-right">Net</th>
+              <th className="p-6 w-10"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayResults.map((row: any, i) => {
+              const sessionData = row['poker_sessions!fk_session'] || row['poker_sessions']
+              return (
+                <tr key={row.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
+                  <td className="p-6 font-bold text-zinc-200">{sessionData?.game_name || "Private Session"}</td>
+                  <td className="p-6 text-zinc-500 text-center">{new Date(row.created_at).toLocaleDateString()}</td>
+                  <td className={`p-6 text-right font-black ${Number(row.net_profit) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {Number(row.net_profit) >= 0 ? `+$${row.net_profit}` : `-$${Math.abs(row.net_profit)}`}
+                  </td>
+                  <td className="p-6">
+                    <button onClick={() => handleDelete(row.id)} className="text-zinc-700 hover:text-red-500 transition-colors">✕</button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )
