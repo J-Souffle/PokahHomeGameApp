@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
 export default async function DashboardPage() {
   const cookieStore = await cookies()
@@ -38,8 +39,22 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
-      <h1 className="text-3xl font-bold tracking-tight">Poker Stats</h1>
-      <p className="text-zinc-500 mt-1">Player: {user.email}</p>
+        <div className="flex justify-between items-center">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Poker Stats</h1>
+        <p className="text-zinc-500 mt-1">Player: {user.email}</p>
+      </div>
+      
+      {/* The New Button */}
+      <Link 
+        href="/dashboard/log-session" 
+        className="bg-green-600 hover:bg-green-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-green-900/20"
+      >
+        + Log Session
+      </Link>
+    </div>
+      {/* <h1 className="text-3xl font-bold tracking-tight">Poker Stats</h1>
+      <p className="text-zinc-500 mt-1">Player: {user.email}</p> */}
       
       <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Profit Card */}
