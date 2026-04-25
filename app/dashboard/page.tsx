@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const [isMounted, setIsMounted] = useState(false)
 
   const handleTransform = (rawData: any[]) => {
+    console.log("DEBUG 2: Raw data received in transform:", rawData);
     const DEFAULT_BUY_IN = 5; 
 
     const transformed = rawData.map((row) => {
@@ -30,6 +31,7 @@ export default function DashboardPage() {
         is_winner: calculatedProfit > 0
       }
     })
+    console.log("DEBUG 3: Transformed results state:", transformed);
     setResults(transformed)
   }
 
@@ -45,7 +47,11 @@ export default function DashboardPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
-      if (data) handleTransform(data);
+      if (data) {
+        console.log("DEBUG 1: Supabase raw fetch success:", data);
+        handleTransform(data);
+      }
+      if (error) console.error("DEBUG ERR: Supabase fetch error:", error);
     } catch (err) {
       console.error("Dashboard error:", err)
     } finally {
@@ -71,13 +77,17 @@ export default function DashboardPage() {
 
   const chartData = useMemo(() => {
     let runningBalance = 0
-    return results.map((row) => {
+    const data = results.map((row, index) => {
       runningBalance += row.calculatedProfit
       return {
+        u_id: index, // Unique identifier for coordinate mapping
         displayDate: new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-        cumulativeProfit: parseFloat(runningBalance.toFixed(2)) 
+        bankroll: Number(runningBalance.toFixed(2)),
+        sessionNet: Number(row.calculatedProfit.toFixed(2))
       }
     })
+    console.log("DEBUG 4: Final ChartData for Recharts:", data);
+    return data;
   }, [results])
 
   if (loading) return (
@@ -107,7 +117,6 @@ export default function DashboardPage() {
       
       {results.length > 0 ? (
         <>
-          {/* THE FIX: Forced aspect ratio and explicit height fallback */}
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
             <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
             
@@ -116,17 +125,41 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height="100%" key={`chart-${results.length}`}>
                   <LineChart data={chartData} margin={{ left: -20, right: 10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
-                    <XAxis dataKey="displayDate" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} />
+                    <XAxis 
+                      dataKey="u_id" 
+                      stroke="#52525b" 
+                      fontSize={10} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tickFormatter={(idx) => chartData[idx]?.displayDate || ''}
+                    />
                     <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dx={-10} tickFormatter={(val) => `$${val}`} />
                     <Tooltip 
-                      cursor={{ stroke: '#27272a', strokeWidth: 1 }}
                       contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
-                      itemStyle={{ color: '#eab308', fontWeight: '900' }}
+                      itemStyle={{ fontWeight: '900' }}
+                      labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
+                      formatter={(value: number, name: string, props: any) => {
+                        console.log("DEBUG 5: Tooltip Formatter triggered", { value, name, payload: props.payload });
+                        const { bankroll, sessionNet } = props.payload;
+                        
+                        if (name === "bankroll") {
+                          return [
+                            <div className="flex flex-col gap-1" key="tooltip-content">
+                              <span className="text-yellow-500 text-lg font-black">Total: ${bankroll.toFixed(2)}</span>
+                              <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest font-bold">
+                                Session: {sessionNet >= 0 ? '+' : ''}${sessionNet.toFixed(2)}
+                              </span>
+                            </div>,
+                            "" 
+                          ];
+                        }
+                        return [value, name];
+                      }}
                     />
                     <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
                     <Line 
                       type="monotone" 
-                      dataKey="cumulativeProfit" 
+                      dataKey="bankroll" 
                       stroke="#eab308" 
                       strokeWidth={5} 
                       dot={{ r: 6, fill: '#09090b', stroke: '#eab308', strokeWidth: 2 }} 
