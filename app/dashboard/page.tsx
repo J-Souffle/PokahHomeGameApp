@@ -4,12 +4,13 @@ import { createClient } from '@/lib/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Trophy, TrendingUp, Zap, ChevronRight } from 'lucide-react'
+import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon } from 'lucide-react'
 
 export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [profile, setProfile] = useState<any>(null) // Added for Display Name
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
@@ -28,7 +29,7 @@ export default function DashboardPage() {
 
       return {
         ...row,
-        session_id: row.session_id, // Ensure session_id is available for navigation
+        session_id: row.session_id, 
         totalInvested: totalInvested, 
         calculatedProfit: calculatedProfit,
         is_winner: calculatedProfit > 0
@@ -42,6 +43,15 @@ export default function DashboardPage() {
       const { data: { user: authUser } } = await supabase.auth.getUser()
       if (!authUser) return (window.location.href = '/login')
       setUser(authUser)
+
+      // Fetch Profile for Display Name
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('display_name, full_name, role')
+        .eq('id', authUser.id)
+        .single()
+      
+      if (profileData) setProfile(profileData)
 
       const { data, error } = await supabase
         .from('player_results')
@@ -86,7 +96,6 @@ export default function DashboardPage() {
     const bestWin = Math.max(...allProfits, 0)
     const worstLoss = Math.min(...allProfits, 0)
 
-    // Milestones logic
     const biggestWin = Math.max(...results.map(r => r.final_chips || 0))
     const comebackGames = results.filter(r => r.rebuys >= 2 && r.calculatedProfit > 0)
     const bestComeback = comebackGames.length > 0 ? Math.max(...comebackGames.map(r => r.calculatedProfit)) : 0
@@ -133,23 +142,35 @@ export default function DashboardPage() {
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
-          <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">The Lab</h1>
+          {/* Personal Shark Alias Welcome */}
+          <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">
+            Welcome back, <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'SHARK'}</span>
+          </h1>
           <p className="text-zinc-500 text-[10px] mt-2 font-mono uppercase tracking-widest">{user?.email}</p>
         </div>
         
-        <div className="flex flex-wrap gap-3">
-          <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2.5 rounded-xl font-black italic transition-all text-sm active:scale-95">
-            🏆 LEADERBOARD
-          </Link>
-          {/* <Link href="/dashboard/log-session" className="bg-yellow-500 text-black px-4 py-2.5 rounded-xl font-black italic transition-all hover:bg-yellow-400 text-sm active:scale-95">
-            + LOG SESSION
-          </Link> */}
-        </div>
+       <div className="flex flex-wrap gap-3">
+  <Link href="/dashboard/leaderboard" className="...">🏆 LEADERBOARD</Link>
+  
+  {/* ONLY SHOW IF ROLE IS HOST */}
+  {profile?.role === 'host' && (
+    <>
+      <Link href="/dashboard/host" className="bg-blue-600 ...">
+        📡 LIVE CONTROL
+      </Link>
+      <Link href="/dashboard/log-session" className="bg-zinc-800 ...">
+        📝 LOG SESSION
+      </Link>
+    </>
+  )}
+
+  <Link href="/dashboard/settings" className="...">⚙️ SETTINGS</Link>
+</div>
+        
       </div>
       
       {results.length > 0 ? (
         <>
-          {/* MAIN CHART */}
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
             <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
             <div className="w-full" style={{ height: '350px', minHeight: '350px' }}>
@@ -173,18 +194,16 @@ export default function DashboardPage() {
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
                       formatter={(value: number, name: string, props: any) => {
                         const { bankroll, sessionNet } = props.payload;
-                        if (name === "bankroll") {
-                          return [
-                            <div className="flex flex-col gap-1" key="tooltip-content">
-                              <span className="text-yellow-500 text-lg font-black">Total: ${bankroll.toFixed(2)}</span>
-                              <span className="text-zinc-500 text-xs font-mono uppercase tracking-widest font-bold">
-                                Session: {sessionNet >= 0 ? '+' : ''}${sessionNet.toFixed(2)}
-                              </span>
-                            </div>,
-                            "" 
-                          ];
-                        }
-                        return [value, name];
+                        // Fixed Tooltip Formatting to remove extra colon
+                        return [
+                          <div className="flex flex-col gap-1 text-left" key="tooltip-content">
+                            <span className="text-yellow-500 text-lg font-black tracking-tighter">TOTAL: ${bankroll.toFixed(2)}</span>
+                            <span className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest font-bold">
+                              SESSION: {sessionNet >= 0 ? '+' : ''}${sessionNet.toFixed(2)}
+                            </span>
+                          </div>,
+                          null 
+                        ];
                       }}
                     />
                     <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
@@ -203,7 +222,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* PRIMARY METRICS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
@@ -225,7 +243,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* MILESTONES & TRENDS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
              <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
                 <div className="w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">
@@ -258,7 +275,6 @@ export default function DashboardPage() {
              </div>
           </div>
 
-          {/* SESSION DISTRIBUTION */}
           <div className="bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 mb-12 shadow-2xl">
             <div className="flex justify-between items-end mb-6">
               <div>
@@ -298,7 +314,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* HISTORY TABLE */}
           <div className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 overflow-hidden shadow-2xl mb-12">
             <table className="w-full text-left border-collapse">
               <thead>

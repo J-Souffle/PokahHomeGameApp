@@ -32,14 +32,35 @@ export async function middleware(request: NextRequest) {
   // This refreshes the session if it's expired
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Protect the dashboard: If someone isn't logged in, kick them to /login
+  // 1. Basic Auth Protection
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // If they ARE logged in and try to go to /login, send them to /dashboard
+  // 2. Prevent logged-in users from seeing login page
   if (user && request.nextUrl.pathname === '/login') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // 3. Host-Only Route Protection
+  const isHostRoute = 
+    request.nextUrl.pathname.startsWith('/dashboard/host') || 
+    request.nextUrl.pathname.startsWith('/dashboard/log-session')
+
+  if (user && isHostRoute) {
+    // Check the role in the profiles table
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    // If role isn't 'host', block access
+    if (profile?.role !== 'host') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
   }
 
   return response

@@ -24,7 +24,7 @@ export default function SessionDetailPage() {
       if (session) {
         const { data: results } = await supabase
           .from('player_results')
-          .select('*, profiles(full_name)')
+          .select('*, profiles(display_name, full_name)')
           .eq('session_id', sessionId)
           .order('final_chips', { ascending: false })
 
