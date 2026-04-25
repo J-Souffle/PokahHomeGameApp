@@ -27,6 +27,7 @@ export default function DashboardPage() {
       return {
         ...row,
         poker_sessions: session, 
+        totalInvested: totalInvested, // Captured for stats
         calculatedProfit: calculatedProfit,
         is_winner: calculatedProfit > 0
       }
@@ -65,13 +66,26 @@ export default function DashboardPage() {
   }, [])
 
   const stats = useMemo(() => {
-    if (results.length === 0) return { total: 0, winRate: "0.0", count: 0 }
+    if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0 }
+    
     const total = results.reduce((acc, row) => acc + row.calculatedProfit, 0)
-    const wins = results.filter(row => row.calculatedProfit > 0).length
+    const totalBuyIns = results.reduce((acc, row) => acc + row.totalInvested, 0)
+    const wins = results.filter(row => row.calculatedProfit > 0)
+    const losses = results.filter(row => row.calculatedProfit <= 0)
+    
+    const allProfits = results.map(r => r.calculatedProfit)
+    const bestWin = Math.max(...allProfits, 0)
+    const worstLoss = Math.min(...allProfits, 0)
+
     return {
       total,
-      winRate: ((wins / results.length) * 100).toFixed(1),
-      count: results.length
+      totalBuyIns,
+      winRate: ((wins.length / results.length) * 100).toFixed(1),
+      count: results.length,
+      wins: wins.length,
+      losses: losses.length,
+      bestWin,
+      worstLoss
     }
   }, [results])
 
@@ -80,7 +94,7 @@ export default function DashboardPage() {
     const data = results.map((row, index) => {
       runningBalance += row.calculatedProfit
       return {
-        u_id: index, // Unique identifier for coordinate mapping
+        u_id: index,
         displayDate: new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
         bankroll: Number(runningBalance.toFixed(2)),
         sessionNet: Number(row.calculatedProfit.toFixed(2))
@@ -172,12 +186,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Total Net Profit</p>
               <p className={`text-5xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 ${stats.total.toFixed(2)}
               </p>
+              <div className="mt-4 pt-4 border-t border-zinc-800/50 flex justify-between items-center">
+                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Total Invested</span>
+                <span className="text-zinc-400 font-mono text-sm font-bold">${stats.totalBuyIns.toFixed(2)}</span>
+              </div>
             </div>
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Win Rate</p>
@@ -186,6 +204,48 @@ export default function DashboardPage() {
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Sessions</p>
               <p className="text-5xl font-black mt-2 tracking-tighter">{stats.count}</p>
+            </div>
+          </div>
+
+          {/* Win/Loss Breakdown Section */}
+          <div className="bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 mb-12 shadow-2xl">
+            <div className="flex justify-between items-end mb-6">
+              <div>
+                <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-3">Session Distribution</h3>
+                <div className="flex gap-4 items-baseline">
+                  <span className="text-green-500 font-black text-3xl italic tracking-tighter">{stats.wins} WINS</span>
+                  <span className="text-zinc-800 font-mono text-xl">/</span>
+                  <span className="text-red-500 font-black text-3xl italic tracking-tighter">{stats.losses} LOSSES</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Horizontal Bar */}
+            <div className="h-3 w-full bg-zinc-950 rounded-full overflow-hidden flex border border-zinc-800/50 shadow-inner">
+              <div 
+                className="h-full bg-green-500 transition-all duration-1000 shadow-[0_0_15px_rgba(34,197,94,0.3)]" 
+                style={{ width: `${(stats.wins / stats.count) * 100}%` }}
+              />
+              <div 
+                className="h-full bg-red-500 transition-all duration-1000 shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
+                style={{ width: `${(stats.losses / stats.count) * 100}%` }}
+              />
+            </div>
+
+            {/* Extremes Section */}
+            <div className="grid grid-cols-2 gap-6 mt-8">
+              <div className="bg-zinc-950/40 p-6 rounded-2xl border border-zinc-800/30">
+                <p className="text-zinc-600 text-[9px] font-black uppercase tracking-widest mb-2">Best Win</p>
+                <p className="text-green-500 font-black text-2xl tracking-tighter italic">
+                  +${stats.bestWin.toFixed(2)}
+                </p>
+              </div>
+              <div className="bg-zinc-950/40 p-6 rounded-2xl border border-zinc-800/30 text-right">
+                <p className="text-zinc-600 text-[9px] font-black uppercase tracking-widest mb-2">Worst Loss</p>
+                <p className="text-red-500 font-black text-2xl tracking-tighter italic">
+                  -${Math.abs(stats.worstLoss).toFixed(2)}
+                </p>
+              </div>
             </div>
           </div>
 
