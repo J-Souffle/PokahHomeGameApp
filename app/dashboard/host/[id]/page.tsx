@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Target } from 'lucide-react'
 
 export default function HostLobby() {
   const params = useParams()
@@ -46,7 +47,7 @@ export default function HostLobby() {
     try {
       const { data: session, error: sError } = await supabase
         .from('poker_sessions')
-        .select('join_code, buy_in, status')
+        .select('join_code, buy_in, status, bounty_target_id, bounty_amount')
         .eq('id', sessionId)
         .single()
       
@@ -125,6 +126,21 @@ export default function HostLobby() {
       .eq('id', playerId)
   }
 
+  const handleSetBounty = async (userId: string, playerName: string) => {
+    const amount = prompt(`Set bounty reward for ${playerName}:`, "5")
+    if (!amount) return
+
+    const { error } = await supabase
+      .from('poker_sessions')
+      .update({ 
+        bounty_target_id: userId,
+        bounty_amount: parseFloat(amount)
+      })
+      .eq('id', sessionId)
+
+    if (error) console.error("DEBUG ERR: Bounty failed:", error.message)
+  }
+
   const saveFinalResults = async () => {
     const updates = players.map(player => {
       const chips = finalChips[player.user_id] || 0
@@ -165,6 +181,27 @@ export default function HostLobby() {
             </span>
           </div>
         </div>
+
+        {/* ACTIVE BOUNTY BANNER */}
+        {sessionData?.bounty_target_id && sessionData?.status !== 'completed' && (
+          <div className="mb-8 p-6 bg-yellow-500/5 border border-yellow-500/20 rounded-[2rem] flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center text-black shadow-[0_0_20px_rgba(234,179,8,0.3)]">
+                <Target size={24} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-yellow-500/60">Priority Target</p>
+                <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">
+                  {players.find(p => p.user_id === sessionData.bounty_target_id)?.display_name || "Target Marked"}
+                </h3>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Reward Pool</p>
+              <p className="text-3xl font-black text-yellow-500 font-mono">${sessionData.bounty_amount}</p>
+            </div>
+          </div>
+        )}
 
         {sessionData?.status === 'completed' ? (
           <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8">
@@ -215,14 +252,23 @@ export default function HostLobby() {
             {/* LOBBY / LIVE VIEW */}
             <div className="grid gap-4 mb-10">
               {players.map(player => (
-                <div key={player.id} className="bg-zinc-900 border border-zinc-800 p-6 rounded-[2rem] flex justify-between items-center">
+                <div key={player.id} className={`bg-zinc-900 border p-6 rounded-[2rem] flex justify-between items-center transition-all ${sessionData?.bounty_target_id === player.user_id ? 'border-yellow-500 shadow-[0_0_30px_rgba(234,179,8,0.1)]' : 'border-zinc-800'}`}>
                   <div>
-                    <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
+                      {sessionData?.bounty_target_id === player.user_id && <Target size={16} className="text-yellow-500 animate-pulse" />}
+                    </div>
                     <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1">
                       In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span>
                     </p>
                   </div>
                   <div className="flex gap-3">
+                    <button 
+                      onClick={() => handleSetBounty(player.user_id, player.display_name)}
+                      className={`p-3 rounded-2xl border transition-all ${sessionData?.bounty_target_id === player.user_id ? 'bg-yellow-500 border-yellow-400 text-black' : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-yellow-500'}`}
+                    >
+                      <Target size={16} strokeWidth={3} />
+                    </button>
                     <button 
                       onClick={() => togglePaid(player.id, player.has_paid)} 
                       className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}

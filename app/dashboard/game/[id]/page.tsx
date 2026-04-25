@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2, Target } from 'lucide-react'
 
 export default function PlayerLiveView() {
   const { id: sessionId } = useParams()
@@ -25,14 +25,12 @@ export default function PlayerLiveView() {
     if (allResults) {
       const me = allResults.find(r => r.user_id === user.id)
       
-      // 1. Update this query to include display_name
       const { data: profile } = await supabase
         .from('profiles')
-        .select('display_name, full_name') // Added display_name
+        .select('display_name, full_name') 
         .eq('id', user.id)
         .single()
       
-      // 2. Use a fallback: Alias -> Full Name -> ID
       const myDisplayName = profile?.display_name || profile?.full_name || `Player ${user.id.substring(0, 4)}`
       
       setMyResult(me ? { ...me, display_name: myDisplayName } : null)
@@ -45,10 +43,9 @@ export default function PlayerLiveView() {
       if (sess?.status === 'completed') {
         const userIds = allResults.map(r => r.user_id)
         
-        // 3. Update the bulk profile query for the Leaderboard
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, display_name, full_name') // Added display_name
+          .select('id, display_name, full_name') 
           .in('id', userIds)
         
         const ranked = allResults.map(r => {
@@ -56,7 +53,6 @@ export default function PlayerLiveView() {
           const p = profiles?.find(p => p.id === r.user_id)
           
           return {
-            // 4. Implement fallback for each entry in the list
             name: p?.display_name || p?.full_name || 'Anonymous',
             profit: (r.final_chips || 0) - buyInTotal
           }
@@ -113,6 +109,10 @@ export default function PlayerLiveView() {
   if (!myResult) return <div className="min-h-screen bg-zinc-950 text-white p-8 font-mono animate-pulse flex items-center justify-center italic">Syncing with table...</div>
 
   const myProfit = (myResult.final_chips || 0) - ((1 + myResult.rebuys) * session.buy_in)
+  
+  // BOUNTY LOGIC
+  const isTarget = session?.bounty_target_id === myResult?.user_id;
+  const hasBounty = !!session?.bounty_target_id && session?.status !== 'completed';
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-6 pb-20">
@@ -227,11 +227,40 @@ export default function PlayerLiveView() {
       ) : (
         /* LIVE GAME VIEW */
         <div className="max-w-md mx-auto space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 text-center shadow-xl">
-            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2 flex items-center justify-center gap-2">
+          
+          {/* BOUNTY ALERT SYSTEM */}
+          {hasBounty && (
+            <div className={`p-6 rounded-[2.5rem] border-2 flex items-center justify-between overflow-hidden relative shadow-2xl transition-all duration-500 ${
+              isTarget 
+                ? 'bg-red-500/10 border-red-500 animate-pulse' 
+                : 'bg-zinc-900 border-zinc-800 animate-in slide-in-from-top-4'
+            }`}>
+              <div className="relative z-10">
+                <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isTarget ? 'text-red-500' : 'text-yellow-500/60'}`}>
+                  {isTarget ? "⚠️ WARNING: YOU ARE THE" : "🎯 PRIORITY TARGET"}
+                </p>
+                <h2 className="text-2xl font-black italic uppercase tracking-tighter leading-none mt-1">
+                  {isTarget ? "BOUNTY" : "HUNT ACTIVE"}
+                </h2>
+              </div>
+              <div className="text-right relative z-10">
+                <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Reward</p>
+                <p className="text-3xl font-black text-yellow-500 font-mono leading-none mt-1">${session.bounty_amount}</p>
+              </div>
+              
+              {/* Background Crosshair Icon */}
+              <div className="absolute right-[-15px] top-[-10px] opacity-10">
+                <Target size={100} className={isTarget ? 'text-red-500' : 'text-white'} />
+              </div>
+            </div>
+          )}
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 text-center shadow-xl relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-2 flex items-center justify-center gap-2 relative z-10">
               <Users size={12} /> Live Pot Value
             </p>
-            <p className="text-7xl font-black tracking-tighter">${potSize}</p>
+            <p className="text-7xl font-black tracking-tighter relative z-10">${potSize}</p>
           </div>
 
           <div className={`p-6 rounded-[2.5rem] border transition-all duration-500 ${
@@ -262,11 +291,10 @@ export default function PlayerLiveView() {
             </div>
           </div>
 
-          {/* NON-STICKY NAVIGATION BUTTON FOR LIVE VIEW */}
           <div className="pt-4">
             <button 
               onClick={() => router.push('/dashboard')}
-              className="w-full group py-6 bg-zinc-900 border border-zinc-800 text-white rounded-[2rem] font-black uppercase italic tracking-widest transition-all duration-300 flex items-center justify-center gap-3 active:scale-95"
+              className="w-full group py-6 bg-zinc-900 border border-zinc-800 text-white rounded-[2rem] font-black uppercase italic tracking-widest transition-all duration-300 flex items-center justify-center gap-3 active:scale-95 hover:border-zinc-600"
             >
               <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" />
               Return to the Lab
