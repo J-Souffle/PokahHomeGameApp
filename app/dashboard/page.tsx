@@ -143,7 +143,7 @@ export default function DashboardPage() {
                 contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px', padding: '12px' }}
                 itemStyle={{ color: '#eab308', fontSize: '16px', fontWeight: '900' }}
                 labelFormatter={(_, payload) => payload[0]?.payload?.displayDate || ''}
-                formatter={(value: number) => [`$${value}`, 'Net Balance']}
+                formatter={(value: any) => [`$${value}`, 'Net Balance']}
               />
               <ReferenceLine y={0} stroke="#27272a" />
               <Line 
