@@ -13,11 +13,27 @@ export default function HostLobby() {
   const [loading, setLoading] = useState(true)
   const [finalChips, setFinalChips] = useState<{[key: string]: number}>({})
 
+  // NEW: Remove Player function
+  const handleRemovePlayer = async (playerId: string) => {
+    const confirmRemoval = confirm("Kick this player from the session?")
+    if (!confirmRemoval) return
+
+    const { error } = await supabase
+      .from('player_results')
+      .delete()
+      .eq('id', playerId)
+
+    if (error) {
+      console.error("Error removing player:", error.message)
+      alert("Failed to remove player.")
+    }
+    // Note: No need to manually call getData() because the Realtime listener handles it
+  }
+
   const getData = useCallback(async () => {
     if (!sessionId) return
     
     try {
-      // 1. Fetch Session Status
       const { data: session, error: sError } = await supabase
         .from('poker_sessions')
         .select('join_code, buy_in, status')
@@ -27,7 +43,6 @@ export default function HostLobby() {
       if (sError) throw sError
       if (session) setSessionData(session)
 
-      // 2. Fetch Player Results - Defensively
       const { data: results, error: pError } = await supabase
         .from('player_results')
         .select('id, user_id, has_paid, rebuys, final_chips')
@@ -35,13 +50,13 @@ export default function HostLobby() {
       
       if (pError) {
         console.error("Error fetching player_results:", pError.message)
-        return // Stop here if we can't even get the player list
+        return 
       }
 
-      // 3. Fetch Profiles for names using correct 'full_name' column
       if (results && results.length > 0) {
         const userIds = results.map(r => r.user_id).filter(Boolean)
         
+        // Correctly using 'full_name' column
         const { data: profileData, error: profError } = await supabase
           .from('profiles')
           .select('id, full_name')
@@ -66,10 +81,8 @@ export default function HostLobby() {
 
   useEffect(() => {
     if (!sessionId) return;
-    
     getData()
 
-    // Fixed Realtime Channel - ensures UI updates when players join or status changes
     const channel = supabase
       .channel(`host-lobby-sync-${sessionId}`)
       .on('postgres_changes', { 
@@ -77,44 +90,26 @@ export default function HostLobby() {
         schema: 'public', 
         table: 'player_results', 
         filter: `session_id=eq.${sessionId}` 
-      }, (payload) => {
-        console.log("Player change detected:", payload)
-        getData()
-      })
+      }, () => getData())
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'poker_sessions', 
         filter: `id=eq.${sessionId}` 
-      }, (payload) => {
-        console.log("Session status updated:", payload)
-        getData()
-      })
-      .subscribe((status) => {
-        console.log(`Realtime subscription status for ${sessionId}:`, status)
-      })
+      }, () => getData())
+      .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [sessionId, getData, supabase])
 
   const handleStartGame = async () => {
-    const { error } = await supabase
-      .from('poker_sessions')
-      .update({ status: 'active' })
-      .eq('id', sessionId)
-    
+    const { error } = await supabase.from('poker_sessions').update({ status: 'active' }).eq('id', sessionId)
     if (error) console.error("Start failed:", error.message)
     else await getData() 
   }
 
   const handleEndGame = async () => {
-    const { error } = await supabase
-      .from('poker_sessions')
-      .update({ status: 'completed' })
-      .eq('id', sessionId)
-    
+    const { error } = await supabase.from('poker_sessions').update({ status: 'completed' }).eq('id', sessionId)
     if (error) console.error("End failed:", error.message)
     else await getData()
   }
@@ -122,12 +117,8 @@ export default function HostLobby() {
   const saveFinalResults = async () => {
     const updates = players.map(player => {
       const chips = finalChips[player.user_id] || 0
-      return supabase
-        .from('player_results')
-        .update({ final_chips: chips })
-        .eq('id', player.id)
+      return supabase.from('player_results').update({ final_chips: chips }).eq('id', player.id)
     })
-    
     await Promise.all(updates)
     alert("Settlement Finalized!")
   }
@@ -137,8 +128,6 @@ export default function HostLobby() {
   return (
     <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
       <div className="max-w-4xl mx-auto">
-        
-        {/* HEADER */}
         <div className="flex justify-between items-end mb-10">
           <div>
             <h2 className="text-4xl font-black uppercase italic tracking-tighter">Command Center</h2>
@@ -160,8 +149,8 @@ export default function HostLobby() {
           </div>
         </div>
 
-        {/* LOBBY / SETTLEMENT LOGIC */}
         {sessionData?.status === 'completed' ? (
+          /* SETTLEMENT VIEW */
           <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="text-2xl font-black uppercase italic text-yellow-500 mb-6">Final Settlement</h3>
             <div className="space-y-6">
@@ -191,6 +180,7 @@ export default function HostLobby() {
             </div>
           </div>
         ) : (
+          /* LOBBY VIEW */
           <>
             <div className="grid gap-4 mb-10">
               {players.length === 0 ? (
@@ -213,6 +203,15 @@ export default function HostLobby() {
                       </button>
                       <button onClick={() => supabase.from('player_results').update({ rebuys: (player.rebuys || 0) + 1 }).eq('id', player.id)} 
                         className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase">+ Rebuy</button>
+                      
+                      {/* REMOVE PLAYER BUTTON */}
+                      <button 
+                        onClick={() => handleRemovePlayer(player.id)}
+                        className="bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 px-4 py-3 rounded-2xl transition-all"
+                        title="Remove Player"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
                     </div>
                   </div>
                 ))
