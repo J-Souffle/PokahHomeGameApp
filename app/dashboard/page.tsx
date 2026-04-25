@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/client'
 import Link from 'next/link'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -11,67 +11,76 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
 
-  const handleTransform = (rawData: any[]) => {
-    console.log("DEBUG 2: Raw data received in transform:", rawData);
+  const handleTransform = useCallback((rawData: any[]) => {
+    // Fallback buy-in if the join fails or the session has no buy-in set
     const DEFAULT_BUY_IN = 5; 
 
     const transformed = rawData.map((row) => {
-      const session = row.poker_sessions || row['poker_sessions!fk_session'];
+      // Logic to find the nested session data regardless of Supabase join naming
+      const session = row.poker_sessions;
       const buyIn = session ? parseFloat(session.buy_in) : DEFAULT_BUY_IN;
       const finalChips = parseFloat(row.final_chips) || 0;
       const rebuys = parseInt(row.rebuys) || 0;
       
+      // Calculation: Initial Buy-in + (Number of Rebuys * Cost per Rebuy)
       const totalInvested = buyIn * (1 + rebuys);
       const calculatedProfit = finalChips - totalInvested;
 
       return {
         ...row,
-        poker_sessions: session, 
-        totalInvested: totalInvested, // Captured for stats
+        totalInvested: totalInvested, 
         calculatedProfit: calculatedProfit,
         is_winner: calculatedProfit > 0
       }
     })
-    console.log("DEBUG 3: Transformed results state:", transformed);
     setResults(transformed)
-  }
+  }, [])
 
-  async function getData() {
+  const getData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return (window.location.href = '/login')
-      setUser(user)
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) return (window.location.href = '/login')
+      setUser(authUser)
 
+      // Added 'poker_sessions(buy_in)' to the select query to ensure we get the buy-in amount
       const { data, error } = await supabase
         .from('player_results')
-        .select(`id, final_chips, rebuys, created_at, user_id`)
-        .eq('user_id', user.id)
+        .select(`
+          id, 
+          final_chips, 
+          rebuys, 
+          created_at, 
+          user_id,
+          poker_sessions (
+            buy_in
+          )
+        `)
+        .eq('user_id', authUser.id)
         .order('created_at', { ascending: true });
 
       if (data) {
-        console.log("DEBUG 1: Supabase raw fetch success:", data);
         handleTransform(data);
       }
-      if (error) console.error("DEBUG ERR: Supabase fetch error:", error);
+      if (error) console.error("Supabase fetch error:", error);
     } catch (err) {
       console.error("Dashboard error:", err)
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase, handleTransform])
 
   useEffect(() => {
     setIsMounted(true)
     getData()
-  }, [])
+  }, [getData])
 
   const stats = useMemo(() => {
     if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0 }
     
+    // Aggregating the pre-calculated invested amounts from handleTransform
     const total = results.reduce((acc, row) => acc + row.calculatedProfit, 0)
     const totalBuyIns = results.reduce((acc, row) => acc + row.totalInvested, 0)
     const wins = results.filter(row => row.calculatedProfit > 0)
-    const losses = results.filter(row => row.calculatedProfit <= 0)
     
     const allProfits = results.map(r => r.calculatedProfit)
     const bestWin = Math.max(...allProfits, 0)
@@ -83,7 +92,7 @@ export default function DashboardPage() {
       winRate: ((wins.length / results.length) * 100).toFixed(1),
       count: results.length,
       wins: wins.length,
-      losses: losses.length,
+      losses: results.length - wins.length,
       bestWin,
       worstLoss
     }
@@ -91,7 +100,7 @@ export default function DashboardPage() {
 
   const chartData = useMemo(() => {
     let runningBalance = 0
-    const data = results.map((row, index) => {
+    return results.map((row, index) => {
       runningBalance += row.calculatedProfit
       return {
         u_id: index,
@@ -99,9 +108,7 @@ export default function DashboardPage() {
         bankroll: Number(runningBalance.toFixed(2)),
         sessionNet: Number(row.calculatedProfit.toFixed(2))
       }
-    })
-    console.log("DEBUG 4: Final ChartData for Recharts:", data);
-    return data;
+    });
   }, [results])
 
   if (loading) return (
@@ -153,9 +160,7 @@ export default function DashboardPage() {
                       itemStyle={{ fontWeight: '900' }}
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
                       formatter={(value: number, name: string, props: any) => {
-                        console.log("DEBUG 5: Tooltip Formatter triggered", { value, name, payload: props.payload });
                         const { bankroll, sessionNet } = props.payload;
-                        
                         if (name === "bankroll") {
                           return [
                             <div className="flex flex-col gap-1" key="tooltip-content">
@@ -193,7 +198,7 @@ export default function DashboardPage() {
                 ${stats.total.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50 flex justify-between items-center">
-                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Total Invested</span>
+                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Total Invested (Inc. Rebuys)</span>
                 <span className="text-zinc-400 font-mono text-sm font-bold">${stats.totalBuyIns.toFixed(2)}</span>
               </div>
             </div>
@@ -207,7 +212,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Win/Loss Breakdown Section */}
+          {/* Win/Loss Breakdown */}
           <div className="bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 mb-12 shadow-2xl">
             <div className="flex justify-between items-end mb-6">
               <div>
@@ -220,19 +225,17 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Horizontal Bar */}
             <div className="h-3 w-full bg-zinc-950 rounded-full overflow-hidden flex border border-zinc-800/50 shadow-inner">
               <div 
-                className="h-full bg-green-500 transition-all duration-1000 shadow-[0_0_15px_rgba(34,197,94,0.3)]" 
+                className="h-full bg-green-500 transition-all duration-1000" 
                 style={{ width: `${(stats.wins / stats.count) * 100}%` }}
               />
               <div 
-                className="h-full bg-red-500 transition-all duration-1000 shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
+                className="h-full bg-red-500 transition-all duration-1000" 
                 style={{ width: `${(stats.losses / stats.count) * 100}%` }}
               />
             </div>
 
-            {/* Extremes Section */}
             <div className="grid grid-cols-2 gap-6 mt-8">
               <div className="bg-zinc-950/40 p-6 rounded-2xl border border-zinc-800/30">
                 <p className="text-zinc-600 text-[9px] font-black uppercase tracking-widest mb-2">Best Win</p>
@@ -253,7 +256,7 @@ export default function DashboardPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800">
-                  <th className="p-8 font-black">Session Type</th>
+                  <th className="p-8 font-black">Session Details</th>
                   <th className="p-8 font-black text-center">Date</th>
                   <th className="p-8 font-black text-right">Net Result</th>
                 </tr>
@@ -262,7 +265,15 @@ export default function DashboardPage() {
                 {[...results].reverse().map((row) => (
                   <tr key={row.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors">
                     <td className="p-8 font-bold text-zinc-200">
-                      Private Session <span className="text-zinc-600 text-xs font-mono ml-2">({row.final_chips} chips)</span>
+                      Private Session 
+                      <div className="flex gap-2 mt-1">
+                        <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
+                          {row.final_chips} chips
+                        </span>
+                        <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
+                          {row.rebuys} rebuys
+                        </span>
+                      </div>
                     </td>
                     <td className="p-8 text-zinc-500 text-center font-mono text-sm">{new Date(row.created_at).toLocaleDateString()}</td>
                     <td className="p-8 text-right">

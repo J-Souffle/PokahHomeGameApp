@@ -15,6 +15,16 @@ export default function HostLobby() {
   const [loading, setLoading] = useState(true)
   const [finalChips, setFinalChips] = useState<{[key: string]: number}>({})
 
+  const togglePaid = async (playerId: string, currentStatus: boolean) => {
+    console.log(`DEBUG: Toggling payment status for ${playerId}`);
+    const { error } = await supabase
+      .from('player_results')
+      .update({ has_paid: !currentStatus })
+      .eq('id', playerId)
+    
+    if (error) console.error("DEBUG ERR: Toggle paid failed:", error.message)
+  }
+
   const handleRemovePlayer = async (playerId: string) => {
     const confirmRemoval = confirm("Kick this player from the session?")
     if (!confirmRemoval) return
@@ -32,7 +42,6 @@ export default function HostLobby() {
 
   const getData = useCallback(async () => {
     if (!sessionId) return
-    console.log("DEBUG: Refreshing Lobby Data...")
     
     try {
       const { data: session, error: sError } = await supabase
@@ -64,7 +73,6 @@ export default function HostLobby() {
           ...r,
           display_name: profileData?.find(p => p.id === r.user_id)?.full_name || `Player ${r.user_id.slice(0,4)}`
         }))
-        console.log("DEBUG: Updated Player List:", combined)
         setPlayers(combined)
       } else {
         setPlayers([])
@@ -87,53 +95,37 @@ export default function HostLobby() {
         schema: 'public', 
         table: 'player_results', 
         filter: `session_id=eq.${sessionId}` 
-      }, (payload) => {
-        console.log("DEBUG: Realtime Player Update Received:", payload);
-        getData();
-      })
+      }, () => getData())
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'poker_sessions', 
         filter: `id=eq.${sessionId}` 
-      }, () => {
-        console.log("DEBUG: Realtime Session Status Updated");
-        getData();
-      })
-      .subscribe((status) => {
-        console.log("DEBUG: Realtime Subscription Status:", status);
-      })
+      }, () => getData())
+      .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [sessionId, getData, supabase])
 
   const handleStartGame = async () => {
-    const { error } = await supabase.from('poker_sessions').update({ status: 'active' }).eq('id', sessionId)
-    if (error) console.error("DEBUG ERR: Start failed:", error.message)
+    await supabase.from('poker_sessions').update({ status: 'active' }).eq('id', sessionId)
   }
 
   const handleEndGame = async () => {
-    const { error } = await supabase.from('poker_sessions').update({ status: 'completed' }).eq('id', sessionId)
-    if (error) console.error("DEBUG ERR: End failed:", error.message)
+    await supabase.from('poker_sessions').update({ status: 'completed' }).eq('id', sessionId)
   }
 
-  // UPDATED REBUY WITH LOGS
   const triggerRebuy = async (playerId: string, currentRebuys: number) => {
-    console.log(`DEBUG: Triggering Rebuy for ${playerId}. New Count: ${currentRebuys + 1}`);
-    const { error } = await supabase
+    await supabase
       .from('player_results')
       .update({ 
         rebuys: (currentRebuys || 0) + 1,
         has_paid: false 
       })
       .eq('id', playerId)
-    
-    if (error) console.error("DEBUG ERR: Rebuy failed:", error.message)
-    else console.log("DEBUG: Rebuy Success - has_paid reset to false")
   }
 
   const saveFinalResults = async () => {
-    console.log("DEBUG: Finalizing Settlement...");
     const updates = players.map(player => {
       const chips = finalChips[player.user_id] || 0
       return supabase.from('player_results').update({ final_chips: chips }).eq('id', player.id)
@@ -143,7 +135,7 @@ export default function HostLobby() {
     router.push('/dashboard') 
   }
 
-  if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center tracking-widest uppercase">Syncing The Lab...</div>
+  if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center uppercase tracking-widest">Syncing Command Center...</div>
 
   return (
     <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans pb-32">
@@ -152,19 +144,14 @@ export default function HostLobby() {
         {/* HEADER */}
         <div className="flex justify-between items-start mb-10">
           <div className="flex items-center gap-4">
-            <Link 
-              href="/dashboard" 
-              className="p-3 bg-zinc-900 rounded-2xl hover:bg-zinc-800 border border-zinc-800 transition-colors"
-            >
+            <Link href="/dashboard" className="p-3 bg-zinc-900 rounded-2xl hover:bg-zinc-800 border border-zinc-800 transition-colors">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </Link>
             <div>
               <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">Command Center</h2>
               <div className="flex items-center gap-3 mt-2">
                 <p className="text-zinc-500 font-mono text-[10px] uppercase">Join Code:</p>
-                <span className="bg-yellow-500 text-black px-4 py-1 rounded-xl font-black text-2xl">
-                  {sessionData?.join_code || '----'}
-                </span>
+                <span className="bg-yellow-500 text-black px-4 py-1 rounded-xl font-black text-2xl">{sessionData?.join_code || '----'}</span>
               </div>
             </div>
           </div>
@@ -180,83 +167,84 @@ export default function HostLobby() {
         </div>
 
         {sessionData?.status === 'completed' ? (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h3 className="text-2xl font-black uppercase italic text-yellow-500 mb-6">Final Settlement</h3>
-            <div className="space-y-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8">
+            <h3 className="text-2xl font-black uppercase italic text-yellow-500 mb-6 tracking-tight">Final Settlement</h3>
+            <div className="space-y-4">
               {players.map(player => {
                 const totalIn = (1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)
                 const chips = finalChips[player.user_id] || 0
                 const profit = chips - totalIn
+                
                 return (
-                  <div key={player.id} className="flex items-center justify-between border-b border-zinc-800/50 pb-6">
-                    <div>
-                      <p className="font-black text-xl uppercase italic">{player.display_name}</p>
-                      <p className={`text-[10px] font-mono uppercase ${profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        Net: {profit >= 0 ? '+' : ''}${profit}
-                      </p>
+                  <div key={player.id} className="flex items-center justify-between bg-zinc-950/50 p-5 rounded-3xl border border-zinc-800/50">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => togglePaid(player.id, player.has_paid)}
+                        className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${
+                          player.has_paid ? 'bg-green-500 border-green-400 text-black' : 'border-zinc-800 text-zinc-800'
+                        }`}
+                      >
+                        {player.has_paid && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+                      </button>
+                      <div>
+                        <p className="font-black text-xl uppercase italic leading-tight">{player.display_name}</p>
+                        <p className={`text-[10px] font-mono uppercase ${profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {profit >= 0 ? 'Collect' : 'Payout'}: ${Math.abs(profit)}
+                        </p>
+                      </div>
                     </div>
-                    <input 
-                      type="number"
-                      className="bg-black border border-zinc-800 rounded-2xl px-4 py-3 w-32 text-right font-black"
-                      placeholder="0"
-                      onChange={(e) => setFinalChips({...finalChips, [player.user_id]: parseInt(e.target.value) || 0})}
-                    />
+                    <div className="flex items-center gap-3">
+                       <span className="text-zinc-600 font-mono text-[10px] uppercase">Final Chips:</span>
+                       <input 
+                        type="number"
+                        className="bg-black border border-zinc-800 rounded-xl px-4 py-2 w-24 text-right font-black text-yellow-500 focus:border-yellow-500 outline-none transition-colors"
+                        placeholder="0"
+                        onChange={(e) => setFinalChips({...finalChips, [player.user_id]: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
                   </div>
                 )
               })}
-              <button onClick={saveFinalResults} className="w-full py-6 bg-yellow-500 text-black rounded-3xl font-black uppercase italic text-lg shadow-xl shadow-yellow-500/10 hover:scale-[1.02] transition-transform">
+              <button onClick={saveFinalResults} className="w-full mt-4 py-6 bg-yellow-500 text-black rounded-3xl font-black uppercase italic text-lg shadow-xl shadow-yellow-500/10 hover:bg-yellow-400 transition-all">
                 Finalize & Close Session
               </button>
             </div>
           </div>
         ) : (
           <>
+            {/* LOBBY / LIVE VIEW */}
             <div className="grid gap-4 mb-10">
-              {players.length === 0 ? (
-                <div className="border-2 border-dashed border-zinc-900 rounded-[2rem] py-20 text-center">
-                   <p className="text-zinc-800 font-black uppercase italic tracking-widest animate-pulse">Awaiting Players...</p>
-                </div>
-              ) : (
-                players.map(player => (
-                  <div key={player.id} className="bg-zinc-900 border border-zinc-800 p-6 rounded-[2rem] flex justify-between items-center shadow-lg transition-all hover:border-zinc-700">
-                    <div>
-                      <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
-                      <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1">
-                        In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span>
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => supabase.from('player_results').update({ has_paid: !player.has_paid }).eq('id', player.id)} 
-                        className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}
-                      >
-                        {player.has_paid ? 'Paid' : 'Unpaid'}
-                      </button>
-                      <button 
-                        onClick={() => triggerRebuy(player.id, player.rebuys)} 
-                        className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-zinc-200 transition-colors shadow-lg shadow-white/5"
-                      >
-                        + Rebuy
-                      </button>
-                      <button 
-                        onClick={() => handleRemovePlayer(player.id)}
-                        className="bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 px-4 py-3 rounded-2xl transition-all border border-transparent hover:border-red-500/20"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                      </button>
-                    </div>
+              {players.map(player => (
+                <div key={player.id} className="bg-zinc-900 border border-zinc-800 p-6 rounded-[2rem] flex justify-between items-center">
+                  <div>
+                    <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
+                    <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1">
+                      In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span>
+                    </p>
                   </div>
-                ))
-              )}
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => togglePaid(player.id, player.has_paid)} 
+                      className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}
+                    >
+                      {player.has_paid ? 'Paid' : 'Unpaid'}
+                    </button>
+                    <button onClick={() => triggerRebuy(player.id, player.rebuys)} className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-zinc-200">
+                      + Rebuy
+                    </button>
+                    <button onClick={() => handleRemovePlayer(player.id)} className="bg-zinc-800 text-zinc-500 hover:text-red-500 px-4 py-3 rounded-2xl border border-transparent hover:border-red-500/20">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <button 
               onClick={sessionData?.status === 'waiting' ? handleStartGame : handleEndGame}
               disabled={players.length === 0 && sessionData?.status === 'waiting'}
-              className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-lg transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] ${
-                sessionData?.status === 'waiting' 
-                  ? 'bg-white text-black shadow-white/5' 
-                  : 'bg-red-600 text-white shadow-red-600/10'
+              className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-lg transition-all ${
+                sessionData?.status === 'waiting' ? 'bg-white text-black' : 'bg-red-600 text-white'
               }`}
             >
               {sessionData?.status === 'waiting' ? 'Start Engine' : 'End Game & Settle'}

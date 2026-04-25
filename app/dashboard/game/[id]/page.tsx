@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Trophy, DollarSign, Users, Share2 } from 'lucide-react'
+import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2 } from 'lucide-react'
 
 export default function PlayerLiveView() {
   const { id: sessionId } = useParams()
@@ -97,7 +97,7 @@ export default function PlayerLiveView() {
   const myProfit = (myResult.final_chips || 0) - ((1 + myResult.rebuys) * session.buy_in)
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6 pb-44">
+    <div className="min-h-screen bg-zinc-950 text-white p-6 pb-20">
       
       {/* HEADER SECTION */}
       <div className="flex flex-col items-center mb-10 mt-4">
@@ -116,6 +116,27 @@ export default function PlayerLiveView() {
       {session?.status === 'completed' ? (
         <div className="space-y-6 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
           
+          {/* SETTLEMENT STATUS */}
+          <div className={`p-6 rounded-[2.5rem] border transition-all duration-500 ${
+            myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-yellow-500/5 border-yellow-500/20 animate-pulse'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all ${
+                  myResult.has_paid ? 'bg-green-500 border-green-400 text-black' : 'border-zinc-800 text-zinc-700'
+                }`}>
+                  {myResult.has_paid ? <CheckCircle2 size={24} strokeWidth={3} /> : <DollarSign size={20} />}
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Payout Status</p>
+                  <p className={`font-black uppercase italic text-sm mt-0.5 ${myResult.has_paid ? 'text-green-500' : 'text-yellow-500'}`}>
+                    {myResult.has_paid ? 'Settlement Confirmed' : 'Waiting for Host...'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* PAYOUT CARD */}
           <div className="bg-white text-black rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(255,255,255,0.05)] relative overflow-hidden">
             <div className={`absolute top-0 right-0 w-32 h-32 opacity-10 translate-x-10 -translate-y-10 rounded-full ${myProfit >= 0 ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -142,7 +163,6 @@ export default function PlayerLiveView() {
             </div>
           </div>
 
-          {/* SHARE BUTTON WITH WRAPPER SPACING */}
           <div className="py-2">
             <button 
               onClick={handleShare}
@@ -175,11 +195,11 @@ export default function PlayerLiveView() {
             </div>
           </div>
 
-          {/* STICKY NAVIGATION FOOTER */}
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent z-50">
+          {/* NON-STICKY NAVIGATION BUTTON */}
+          <div className="pt-4">
             <button 
               onClick={() => router.push('/dashboard')}
-              className="w-full max-w-md mx-auto group py-6 bg-white text-black rounded-[2rem] font-black uppercase italic tracking-widest transition-all duration-300 flex items-center justify-center gap-3 shadow-2xl shadow-white/10 active:scale-95"
+              className="w-full group py-6 bg-white text-black rounded-[2rem] font-black uppercase italic tracking-widest transition-all duration-300 flex items-center justify-center gap-3 shadow-2xl active:scale-95"
             >
               <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" />
               Return to the Lab
@@ -200,11 +220,18 @@ export default function PlayerLiveView() {
             myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20 animate-pulse'
           }`}>
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Buy-In Status</p>
-                <p className={`font-black uppercase italic text-sm mt-1 ${myResult.has_paid ? 'text-green-500' : 'text-red-500'}`}>
-                  {myResult.has_paid ? 'Transaction Verified' : 'Awaiting Payment'}
-                </p>
+              <div className="flex items-center gap-4">
+                 <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${
+                  myResult.has_paid ? 'bg-green-500 border-green-400 text-black' : 'border-zinc-800 text-zinc-700'
+                }`}>
+                  {myResult.has_paid ? <CheckCircle2 size={20} strokeWidth={3} /> : <DollarSign size={16} />}
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Buy-In Status</p>
+                  <p className={`font-black uppercase italic text-sm mt-0.5 ${myResult.has_paid ? 'text-green-500' : 'text-red-500'}`}>
+                    {myResult.has_paid ? 'Transaction Verified' : 'Awaiting Payment'}
+                  </p>
+                </div>
               </div>
               {!myResult.has_paid && (
                 <button 
@@ -215,6 +242,17 @@ export default function PlayerLiveView() {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* NON-STICKY NAVIGATION BUTTON FOR LIVE VIEW */}
+          <div className="pt-4">
+            <button 
+              onClick={() => router.push('/dashboard')}
+              className="w-full group py-6 bg-zinc-900 border border-zinc-800 text-white rounded-[2rem] font-black uppercase italic tracking-widest transition-all duration-300 flex items-center justify-center gap-3 active:scale-95"
+            >
+              <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" />
+              Return to the Lab
+            </button>
           </div>
         </div>
       )}
