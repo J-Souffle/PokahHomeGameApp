@@ -1,10 +1,12 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation' // Added useRouter
+import Link from 'next/link'
 
 export default function HostLobby() {
   const params = useParams()
+  const router = useRouter()
   const sessionId = params.id as string
   const supabase = useMemo(() => createClient(), [])
   
@@ -13,7 +15,6 @@ export default function HostLobby() {
   const [loading, setLoading] = useState(true)
   const [finalChips, setFinalChips] = useState<{[key: string]: number}>({})
 
-  // NEW: Remove Player function
   const handleRemovePlayer = async (playerId: string) => {
     const confirmRemoval = confirm("Kick this player from the session?")
     if (!confirmRemoval) return
@@ -27,7 +28,6 @@ export default function HostLobby() {
       console.error("Error removing player:", error.message)
       alert("Failed to remove player.")
     }
-    // Note: No need to manually call getData() because the Realtime listener handles it
   }
 
   const getData = useCallback(async () => {
@@ -55,8 +55,6 @@ export default function HostLobby() {
 
       if (results && results.length > 0) {
         const userIds = results.map(r => r.user_id).filter(Boolean)
-        
-        // Correctly using 'full_name' column
         const { data: profileData, error: profError } = await supabase
           .from('profiles')
           .select('id, full_name')
@@ -121,21 +119,32 @@ export default function HostLobby() {
     })
     await Promise.all(updates)
     alert("Settlement Finalized!")
+    router.push('/dashboard') // Take host back to dashboard after closing out
   }
 
   if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center">Initial Syncing...</div>
 
   return (
-    <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
+    <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans pb-32"> {/* Extra padding for bottom nav */}
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-end mb-10">
-          <div>
-            <h2 className="text-4xl font-black uppercase italic tracking-tighter">Command Center</h2>
-            <div className="flex items-center gap-3 mt-2">
-              <p className="text-zinc-500 font-mono text-[10px] uppercase">Join Code:</p>
-              <span className="bg-yellow-500 text-black px-4 py-1 rounded-xl font-black text-2xl">
-                {sessionData?.join_code || '----'}
-              </span>
+        
+        {/* HEADER WITH NAV */}
+        <div className="flex justify-between items-start mb-10">
+          <div className="flex items-center gap-4">
+            <Link 
+              href="/dashboard" 
+              className="p-3 bg-zinc-900 rounded-2xl hover:bg-zinc-800 border border-zinc-800 transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </Link>
+            <div>
+              <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-none">Command Center</h2>
+              <div className="flex items-center gap-3 mt-2">
+                <p className="text-zinc-500 font-mono text-[10px] uppercase">Join Code:</p>
+                <span className="bg-yellow-500 text-black px-4 py-1 rounded-xl font-black text-2xl">
+                  {sessionData?.join_code || '----'}
+                </span>
+              </div>
             </div>
           </div>
           <div className="text-right">
@@ -150,7 +159,6 @@ export default function HostLobby() {
         </div>
 
         {sessionData?.status === 'completed' ? (
-          /* SETTLEMENT VIEW */
           <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="text-2xl font-black uppercase italic text-yellow-500 mb-6">Final Settlement</h3>
             <div className="space-y-6">
@@ -169,18 +177,18 @@ export default function HostLobby() {
                     <input 
                       type="number"
                       className="bg-black border border-zinc-800 rounded-2xl px-4 py-3 w-32 text-right font-black"
+                      placeholder="0"
                       onChange={(e) => setFinalChips({...finalChips, [player.user_id]: parseInt(e.target.value) || 0})}
                     />
                   </div>
                 )
               })}
-              <button onClick={saveFinalResults} className="w-full py-6 bg-yellow-500 text-black rounded-3xl font-black uppercase italic text-lg shadow-xl shadow-yellow-500/10">
-                Finalize Payouts
+              <button onClick={saveFinalResults} className="w-full py-6 bg-yellow-500 text-black rounded-3xl font-black uppercase italic text-lg shadow-xl shadow-yellow-500/10 hover:scale-[1.02] transition-transform">
+                Finalize & Close Session
               </button>
             </div>
           </div>
         ) : (
-          /* LOBBY VIEW */
           <>
             <div className="grid gap-4 mb-10">
               {players.length === 0 ? (
@@ -198,19 +206,18 @@ export default function HostLobby() {
                     </div>
                     <div className="flex gap-3">
                       <button onClick={() => supabase.from('player_results').update({ has_paid: !player.has_paid }).eq('id', player.id)} 
-                        className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}>
+                        className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}>
                         {player.has_paid ? 'Paid' : 'Unpaid'}
                       </button>
                       <button onClick={() => supabase.from('player_results').update({ rebuys: (player.rebuys || 0) + 1 }).eq('id', player.id)} 
-                        className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase">+ Rebuy</button>
+                        className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-zinc-200 transition-colors">+ Rebuy</button>
                       
-                      {/* REMOVE PLAYER BUTTON */}
                       <button 
                         onClick={() => handleRemovePlayer(player.id)}
-                        className="bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 px-4 py-3 rounded-2xl transition-all"
+                        className="bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 px-4 py-3 rounded-2xl transition-all border border-transparent hover:border-red-500/20"
                         title="Remove Player"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                       </button>
                     </div>
                   </div>
@@ -221,8 +228,10 @@ export default function HostLobby() {
             <button 
               onClick={sessionData?.status === 'waiting' ? handleStartGame : handleEndGame}
               disabled={players.length === 0 && sessionData?.status === 'waiting'}
-              className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-lg transition-all ${
-                sessionData?.status === 'waiting' ? 'bg-white text-black' : 'bg-red-600 text-white'
+              className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-lg transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] ${
+                sessionData?.status === 'waiting' 
+                  ? 'bg-white text-black shadow-white/5 disabled:opacity-50' 
+                  : 'bg-red-600 text-white shadow-red-600/10'
               }`}
             >
               {sessionData?.status === 'waiting' ? 'Start Engine' : 'End Game & Settle'}

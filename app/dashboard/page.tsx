@@ -10,7 +10,6 @@ export default function DashboardPage() {
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   
-  // State for inline editing
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string>('')
 
@@ -63,14 +62,10 @@ export default function DashboardPage() {
     setEditingId(null)
   }
 
-  // --- STATS & CHART LOGIC ---
   const stats = useMemo(() => {
     if (results.length === 0) return { total: 0, winRate: 0, count: 0, bestId: null, worstId: null }
-    
     const total = results.reduce((acc, row) => acc + Number(row.net_profit), 0)
     const wins = results.filter(row => row.is_winner).length
-    
-    // Identifies Best/Worst sessions for table badges
     const sortedByProfit = [...results].sort((a, b) => Number(b.net_profit) - Number(a.net_profit))
     
     return {
@@ -87,7 +82,7 @@ export default function DashboardPage() {
     return results.map((row, index) => {
       runningBalance += parseFloat(row.net_profit.toString())
       return {
-        uniqueId: row.id || index, // Unique key fix for tooltips
+        uniqueId: row.id || index,
         displayDate: new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
         cumulativeProfit: parseFloat(runningBalance.toFixed(2)) 
       }
@@ -102,20 +97,31 @@ export default function DashboardPage() {
 
   return (
     <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
-      <div className="flex justify-between items-center mb-8">
+      
+      {/* UPDATED HEADER SECTION */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
         <div>
           <h1 className="text-3xl font-black italic tracking-tighter uppercase leading-none">The Lab</h1>
           <p className="text-zinc-500 text-[10px] mt-1 font-mono uppercase tracking-widest">{user?.email}</p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/dashboard/settings" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl font-bold transition-all text-xs uppercase tracking-tighter flex items-center gap-2">⚙️ Settings</Link>
+        
+        <div className="flex flex-wrap gap-3">
+          {/* NEW JOIN GAME BUTTON */}
+          <Link 
+            href="/dashboard/join" 
+            className="bg-white text-black px-4 py-2 rounded-xl font-black italic transition-all hover:bg-zinc-200 text-sm shadow-lg shadow-white/5 flex items-center gap-2"
+          >
+            ♣️ JOIN GAME
+          </Link>
+
           <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl font-bold transition-all text-xs uppercase tracking-tighter flex items-center gap-2">🏆 Leaderboard</Link>
           <Link href="/dashboard/log-session" className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-black italic transition-all hover:bg-yellow-400 text-sm shadow-lg shadow-yellow-500/10">+ LOG SESSION</Link>
+          <Link href="/dashboard/settings" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white p-2 rounded-xl font-bold transition-all text-sm flex items-center justify-center">⚙️</Link>
         </div>
       </div>
       
       {/* Chart Section */}
-      <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2rem] border border-zinc-800/50 shadow-2xl">
+      <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl">
         <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -178,7 +184,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Sessions Table with Best/Worst Indicators */}
+      {/* Sessions Table */}
       <div className="bg-zinc-900/40 rounded-[2rem] border border-zinc-800 overflow-hidden">
         <table className="w-full text-left">
           <thead className="bg-zinc-800/20">

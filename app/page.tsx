@@ -5,7 +5,8 @@ import { Player } from "@/types/poker"
 import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddPlayerDrawer } from "@/components/AddPlayerDrawer"
 import { CashOutDrawer } from "@/components/CashOutDrawer"
-import { Trash2, RefreshCw } from "lucide-react"
+import { Trash2, RefreshCw, ChevronLeft } from "lucide-react" // Added ChevronLeft
+import Link from "next/link" // Added Link
 
 const SESSION_ID = "43dfbd26-08fb-4436-b9ac-8485b7e81a58" 
 
@@ -14,7 +15,6 @@ export default function PokerDashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // 1. Initial Data Fetch
     const fetchPlayers = async () => {
       const { data } = await supabase
         .from('players')
@@ -27,7 +27,6 @@ export default function PokerDashboard() {
     }
     fetchPlayers()
 
-    // 2. Realtime Listener (THE MISSING PIECE)
     const channel = supabase
       .channel('poker-realtime')
       .on(
@@ -38,8 +37,6 @@ export default function PokerDashboard() {
           table: 'players',
         },
         (payload) => {
-          console.log('Change received!', payload)
-          
           if (payload.eventType === 'INSERT') {
             const newPlayer = payload.new as Player
             if (newPlayer.session_id === SESSION_ID) {
@@ -49,14 +46,12 @@ export default function PokerDashboard() {
               })
             }
           } 
-          
           if (payload.eventType === 'UPDATE') {
             const updatedPlayer = payload.new as Player
             setPlayers((prev) => 
               prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p))
             )
           }
-
           if (payload.eventType === 'DELETE') {
             const deletedId = payload.old.id
             setPlayers((prev) => prev.filter((p) => p.id !== deletedId))
@@ -70,17 +65,12 @@ export default function PokerDashboard() {
     }
   }, [])
 
-  // --- ACTIONS (Simplified because Realtime handles UI updates) ---
   const addPlayer = async (name: string, buyIn: number) => {
-    const { error } = await supabase
-      .from('players')
-      .insert([{ name, buy_in: buyIn, session_id: SESSION_ID, chips: 0 }])
-    if (error) console.error("Error adding player:", error)
+    await supabase.from('players').insert([{ name, buy_in: buyIn, session_id: SESSION_ID, chips: 0 }])
   }
 
   const handleCashOut = async (id: string, chips: number) => {
-    const { error } = await supabase.from('players').update({ chips }).eq('id', id)
-    if (error) console.error("Update error:", error)
+    await supabase.from('players').update({ chips }).eq('id', id)
   }
 
   const handleReload = async (player: Player, amount: number) => {
@@ -98,7 +88,6 @@ export default function PokerDashboard() {
     }
   }
 
-  // --- DERIVED MATH ---
   const totalPot = players.reduce((sum, p) => sum + Number(p.buy_in), 0)
   const totalChips = players.reduce((sum, p) => sum + (Number(p.chips) || 0), 0)
   const isBalanced = totalPot === totalChips
@@ -117,17 +106,26 @@ export default function PokerDashboard() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50 p-4 pb-40">
-      <header className="mb-4">
-        <h1 className="text-3xl font-bold tracking-tight">Friday Night Poker</h1>
+      
+      {/* UPDATED HEADER WITH DASHBOARD BUTTON */}
+      <header className="mb-6 pt-2">
+        <Link 
+          href="/dashboard" 
+          className="inline-flex items-center gap-1 text-zinc-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest mb-4"
+        >
+          <ChevronLeft size={14} />
+          Back to Dashboard
+        </Link>
+        <h1 className="text-3xl font-bold tracking-tight leading-tight">Friday Night Poker</h1>
         <p className="text-zinc-400">Total Pot: <span className="text-green-500 font-mono">${totalPot.toFixed(2)}</span></p>
       </header>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800">
+        <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 shadow-sm">
           <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">Inbound (Venmos)</p>
           <p className="text-2xl font-mono text-blue-400 font-bold">${expectedInbound.toFixed(2)}</p>
         </div>
-        <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800">
+        <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 shadow-sm">
           <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">Payouts (Winners)</p>
           <p className="text-2xl font-mono text-orange-400 font-bold">${totalPayouts.toFixed(2)}</p>
         </div>
@@ -145,7 +143,7 @@ export default function PokerDashboard() {
         {players.map((player) => {
           const net = (Number(player.chips) || 0) - Number(player.buy_in)
           return (
-            <Card key={player.id} className="bg-zinc-900 border-zinc-800 relative overflow-hidden">
+            <Card key={player.id} className="bg-zinc-900 border-zinc-800 relative overflow-hidden transition-all hover:border-zinc-700">
               <button 
                 onClick={() => { if(confirm(`Remove ${player.name}?`)) removePlayer(player.id) }}
                 className="absolute top-3 right-3 text-zinc-700 hover:text-red-500 z-10 p-1"
@@ -190,7 +188,7 @@ export default function PokerDashboard() {
         <div className="mt-12 mb-8 px-4">
           <button 
             onClick={resetTable}
-            className="w-full py-4 text-xs font-bold uppercase tracking-[0.2em] text-zinc-600 hover:text-red-500 border border-dashed border-zinc-800 rounded-2xl flex items-center justify-center gap-2"
+            className="w-full py-4 text-xs font-bold uppercase tracking-[0.2em] text-zinc-600 hover:text-red-500 border border-dashed border-zinc-800 rounded-2xl flex items-center justify-center gap-2 transition-colors"
           >
             <RefreshCw size={14} />
             Reset Table for New Game
