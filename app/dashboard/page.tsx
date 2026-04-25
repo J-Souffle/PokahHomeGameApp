@@ -2,32 +2,33 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/client'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { Trophy, TrendingUp, Zap, ChevronRight } from 'lucide-react'
 
 export default function DashboardPage() {
   const supabase = createClient()
+  const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
 
   const handleTransform = useCallback((rawData: any[]) => {
-    // Fallback buy-in if the join fails or the session has no buy-in set
     const DEFAULT_BUY_IN = 5; 
 
     const transformed = rawData.map((row) => {
-      // Logic to find the nested session data regardless of Supabase join naming
       const session = row.poker_sessions;
       const buyIn = session ? parseFloat(session.buy_in) : DEFAULT_BUY_IN;
       const finalChips = parseFloat(row.final_chips) || 0;
       const rebuys = parseInt(row.rebuys) || 0;
       
-      // Calculation: Initial Buy-in + (Number of Rebuys * Cost per Rebuy)
       const totalInvested = buyIn * (1 + rebuys);
       const calculatedProfit = finalChips - totalInvested;
 
       return {
         ...row,
+        session_id: row.session_id, // Ensure session_id is available for navigation
         totalInvested: totalInvested, 
         calculatedProfit: calculatedProfit,
         is_winner: calculatedProfit > 0
@@ -42,11 +43,11 @@ export default function DashboardPage() {
       if (!authUser) return (window.location.href = '/login')
       setUser(authUser)
 
-      // Added 'poker_sessions(buy_in)' to the select query to ensure we get the buy-in amount
       const { data, error } = await supabase
         .from('player_results')
         .select(`
           id, 
+          session_id,
           final_chips, 
           rebuys, 
           created_at, 
@@ -75,9 +76,8 @@ export default function DashboardPage() {
   }, [getData])
 
   const stats = useMemo(() => {
-    if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0 }
+    if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0, biggestWin: 0, comeback: 0, trend: 0 }
     
-    // Aggregating the pre-calculated invested amounts from handleTransform
     const total = results.reduce((acc, row) => acc + row.calculatedProfit, 0)
     const totalBuyIns = results.reduce((acc, row) => acc + row.totalInvested, 0)
     const wins = results.filter(row => row.calculatedProfit > 0)
@@ -85,6 +85,14 @@ export default function DashboardPage() {
     const allProfits = results.map(r => r.calculatedProfit)
     const bestWin = Math.max(...allProfits, 0)
     const worstLoss = Math.min(...allProfits, 0)
+
+    // Milestones logic
+    const biggestWin = Math.max(...results.map(r => r.final_chips || 0))
+    const comebackGames = results.filter(r => r.rebuys >= 2 && r.calculatedProfit > 0)
+    const bestComeback = comebackGames.length > 0 ? Math.max(...comebackGames.map(r => r.calculatedProfit)) : 0
+    
+    const lastFive = results.slice(-5)
+    const trend = lastFive.reduce((acc, r) => acc + r.calculatedProfit, 0)
 
     return {
       total,
@@ -94,7 +102,10 @@ export default function DashboardPage() {
       wins: wins.length,
       losses: results.length - wins.length,
       bestWin,
-      worstLoss
+      worstLoss,
+      biggestWin,
+      comeback: bestComeback,
+      trend
     }
   }, [results])
 
@@ -138,9 +149,9 @@ export default function DashboardPage() {
       
       {results.length > 0 ? (
         <>
+          {/* MAIN CHART */}
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
             <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
-            
             <div className="w-full" style={{ height: '350px', minHeight: '350px' }}>
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%" key={`chart-${results.length}`}>
@@ -158,6 +169,7 @@ export default function DashboardPage() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
                       itemStyle={{ fontWeight: '900' }}
+                      separator=""
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
                       formatter={(value: number, name: string, props: any) => {
                         const { bankroll, sessionNet } = props.payload;
@@ -191,28 +203,62 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* PRIMARY METRICS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Total Net Profit</p>
-              <p className={`text-5xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
+              <p className={`text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 ${stats.total.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50 flex justify-between items-center">
-                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest">Total Invested (Inc. Rebuys)</span>
+                <span className="text-zinc-600 text-xs font-black uppercase tracking-widest">Total Invested</span>
                 <span className="text-zinc-400 font-mono text-sm font-bold">${stats.totalBuyIns.toFixed(2)}</span>
               </div>
             </div>
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Win Rate</p>
-              <p className="text-5xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
+              <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Win Rate</p>
+              <p className="text-7xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
             </div>
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Sessions</p>
-              <p className="text-5xl font-black mt-2 tracking-tighter">{stats.count}</p>
+              <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Sessions</p>
+              <p className="text-7xl font-black mt-2 tracking-tighter">{stats.count}</p>
             </div>
           </div>
 
-          {/* Win/Loss Breakdown */}
+          {/* MILESTONES & TRENDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+             <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
+                <div className="w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">
+                  <Trophy size={20} />
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Best Cash Out</p>
+                  <p className="text-xl font-black italic text-white">${stats.biggestWin}</p>
+                </div>
+             </div>
+             <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
+                <div className="w-12 h-12 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-500">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Best Comeback</p>
+                  <p className="text-xl font-black italic text-white">+${stats.comeback.toFixed(2)}</p>
+                </div>
+             </div>
+             <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
+                <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
+                  <TrendingUp size={20} />
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Last 5 Trend</p>
+                  <p className={`text-xl font-black italic ${stats.trend >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {stats.trend >= 0 ? '+' : ''}${stats.trend.toFixed(2)}
+                  </p>
+                </div>
+             </div>
+          </div>
+
+          {/* SESSION DISTRIBUTION */}
           <div className="bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 mb-12 shadow-2xl">
             <div className="flex justify-between items-end mb-6">
               <div>
@@ -252,6 +298,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* HISTORY TABLE */}
           <div className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 overflow-hidden shadow-2xl mb-12">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -263,9 +310,16 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {[...results].reverse().map((row) => (
-                  <tr key={row.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors">
+                  <tr 
+                    key={row.id} 
+                    onClick={() => router.push(`/dashboard/session/${row.session_id}`)}
+                    className="border-b border-zinc-800/50 hover:bg-white/[0.02] cursor-pointer transition-colors group"
+                  >
                     <td className="p-8 font-bold text-zinc-200">
-                      Private Session 
+                      <div className="flex items-center gap-3">
+                        Private Session 
+                        <ChevronRight size={14} className="text-zinc-700 group-hover:translate-x-1 transition-transform" />
+                      </div>
                       <div className="flex gap-2 mt-1">
                         <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
                           {row.final_chips} chips
