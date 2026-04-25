@@ -24,9 +24,19 @@ export default function PlayerLiveView() {
     
     if (allResults) {
       const me = allResults.find(r => r.user_id === user.id)
-      const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
       
-      setMyResult(me ? { ...me, display_name: profile?.full_name } : null)
+      // 1. Update this query to include display_name
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name, full_name') // Added display_name
+        .eq('id', user.id)
+        .single()
+      
+      // 2. Use a fallback: Alias -> Full Name -> ID
+      const myDisplayName = profile?.display_name || profile?.full_name || `Player ${user.id.substring(0, 4)}`
+      
+      setMyResult(me ? { ...me, display_name: myDisplayName } : null)
+      
       setStats({
         totalPlayers: allResults.length,
         totalRebuys: allResults.reduce((acc, r) => acc + (r.rebuys || 0), 0)
@@ -34,12 +44,20 @@ export default function PlayerLiveView() {
 
       if (sess?.status === 'completed') {
         const userIds = allResults.map(r => r.user_id)
-        const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', userIds)
+        
+        // 3. Update the bulk profile query for the Leaderboard
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, full_name') // Added display_name
+          .in('id', userIds)
         
         const ranked = allResults.map(r => {
           const buyInTotal = (1 + (r.rebuys || 0)) * (sess?.buy_in || 0)
+          const p = profiles?.find(p => p.id === r.user_id)
+          
           return {
-            name: profiles?.find(p => p.id === r.user_id)?.full_name || 'Anonymous',
+            // 4. Implement fallback for each entry in the list
+            name: p?.display_name || p?.full_name || 'Anonymous',
             profit: (r.final_chips || 0) - buyInTotal
           }
         }).sort((a, b) => b.profit - a.profit)

@@ -152,6 +152,7 @@ export default function DashboardPage() {
        <div className="flex flex-wrap gap-3">
   <Link href="/dashboard/leaderboard" className="...">🏆 LEADERBOARD</Link>
   
+  <Link href="/dashboard/join" className="...">🚀 JOIN LOBBY</Link>
   {/* ONLY SHOW IF ROLE IS HOST */}
   {profile?.role === 'host' && (
     <>
