@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
-import { useParams, useRouter } from 'next/navigation' // Added useRouter
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 export default function HostLobby() {
@@ -25,13 +25,14 @@ export default function HostLobby() {
       .eq('id', playerId)
 
     if (error) {
-      console.error("Error removing player:", error.message)
+      console.error("DEBUG ERR: Remove failed:", error.message)
       alert("Failed to remove player.")
     }
   }
 
   const getData = useCallback(async () => {
     if (!sessionId) return
+    console.log("DEBUG: Refreshing Lobby Data...")
     
     try {
       const { data: session, error: sError } = await supabase
@@ -48,10 +49,7 @@ export default function HostLobby() {
         .select('id, user_id, has_paid, rebuys, final_chips')
         .eq('session_id', sessionId)
       
-      if (pError) {
-        console.error("Error fetching player_results:", pError.message)
-        return 
-      }
+      if (pError) throw pError
 
       if (results && results.length > 0) {
         const userIds = results.map(r => r.user_id).filter(Boolean)
@@ -66,12 +64,13 @@ export default function HostLobby() {
           ...r,
           display_name: profileData?.find(p => p.id === r.user_id)?.full_name || `Player ${r.user_id.slice(0,4)}`
         }))
+        console.log("DEBUG: Updated Player List:", combined)
         setPlayers(combined)
       } else {
         setPlayers([])
       }
     } catch (err: any) {
-      console.error("Critical Data Fetch Error:", err.message)
+      console.error("DEBUG ERR: Critical Data Fetch Error:", err.message)
     } finally {
       setLoading(false)
     }
@@ -88,47 +87,69 @@ export default function HostLobby() {
         schema: 'public', 
         table: 'player_results', 
         filter: `session_id=eq.${sessionId}` 
-      }, () => getData())
+      }, (payload) => {
+        console.log("DEBUG: Realtime Player Update Received:", payload);
+        getData();
+      })
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'poker_sessions', 
         filter: `id=eq.${sessionId}` 
-      }, () => getData())
-      .subscribe()
+      }, () => {
+        console.log("DEBUG: Realtime Session Status Updated");
+        getData();
+      })
+      .subscribe((status) => {
+        console.log("DEBUG: Realtime Subscription Status:", status);
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [sessionId, getData, supabase])
 
   const handleStartGame = async () => {
     const { error } = await supabase.from('poker_sessions').update({ status: 'active' }).eq('id', sessionId)
-    if (error) console.error("Start failed:", error.message)
-    else await getData() 
+    if (error) console.error("DEBUG ERR: Start failed:", error.message)
   }
 
   const handleEndGame = async () => {
     const { error } = await supabase.from('poker_sessions').update({ status: 'completed' }).eq('id', sessionId)
-    if (error) console.error("End failed:", error.message)
-    else await getData()
+    if (error) console.error("DEBUG ERR: End failed:", error.message)
+  }
+
+  // UPDATED REBUY WITH LOGS
+  const triggerRebuy = async (playerId: string, currentRebuys: number) => {
+    console.log(`DEBUG: Triggering Rebuy for ${playerId}. New Count: ${currentRebuys + 1}`);
+    const { error } = await supabase
+      .from('player_results')
+      .update({ 
+        rebuys: (currentRebuys || 0) + 1,
+        has_paid: false 
+      })
+      .eq('id', playerId)
+    
+    if (error) console.error("DEBUG ERR: Rebuy failed:", error.message)
+    else console.log("DEBUG: Rebuy Success - has_paid reset to false")
   }
 
   const saveFinalResults = async () => {
+    console.log("DEBUG: Finalizing Settlement...");
     const updates = players.map(player => {
       const chips = finalChips[player.user_id] || 0
       return supabase.from('player_results').update({ final_chips: chips }).eq('id', player.id)
     })
     await Promise.all(updates)
     alert("Settlement Finalized!")
-    router.push('/dashboard') // Take host back to dashboard after closing out
+    router.push('/dashboard') 
   }
 
-  if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center">Initial Syncing...</div>
+  if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center tracking-widest uppercase">Syncing The Lab...</div>
 
   return (
-    <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans pb-32"> {/* Extra padding for bottom nav */}
+    <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans pb-32">
       <div className="max-w-4xl mx-auto">
         
-        {/* HEADER WITH NAV */}
+        {/* HEADER */}
         <div className="flex justify-between items-start mb-10">
           <div className="flex items-center gap-4">
             <Link 
@@ -201,21 +222,25 @@ export default function HostLobby() {
                     <div>
                       <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
                       <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1">
-                        In for: <span className="text-white">${(1 + player.rebuys) * (sessionData?.buy_in || 0)}</span>
+                        In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span>
                       </p>
                     </div>
                     <div className="flex gap-3">
-                      <button onClick={() => supabase.from('player_results').update({ has_paid: !player.has_paid }).eq('id', player.id)} 
-                        className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}>
+                      <button 
+                        onClick={() => supabase.from('player_results').update({ has_paid: !player.has_paid }).eq('id', player.id)} 
+                        className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase border transition-colors ${player.has_paid ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-red-500/10 border-red-500 text-red-500'}`}
+                      >
                         {player.has_paid ? 'Paid' : 'Unpaid'}
                       </button>
-                      <button onClick={() => supabase.from('player_results').update({ rebuys: (player.rebuys || 0) + 1 }).eq('id', player.id)} 
-                        className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-zinc-200 transition-colors">+ Rebuy</button>
-                      
+                      <button 
+                        onClick={() => triggerRebuy(player.id, player.rebuys)} 
+                        className="bg-white text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-zinc-200 transition-colors shadow-lg shadow-white/5"
+                      >
+                        + Rebuy
+                      </button>
                       <button 
                         onClick={() => handleRemovePlayer(player.id)}
                         className="bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 px-4 py-3 rounded-2xl transition-all border border-transparent hover:border-red-500/20"
-                        title="Remove Player"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                       </button>
@@ -230,7 +255,7 @@ export default function HostLobby() {
               disabled={players.length === 0 && sessionData?.status === 'waiting'}
               className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-lg transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] ${
                 sessionData?.status === 'waiting' 
-                  ? 'bg-white text-black shadow-white/5 disabled:opacity-50' 
+                  ? 'bg-white text-black shadow-white/5' 
                   : 'bg-red-600 text-white shadow-red-600/10'
               }`}
             >
