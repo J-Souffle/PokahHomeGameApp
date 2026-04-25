@@ -141,9 +141,9 @@ export default function DashboardPage() {
           <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white px-4 py-2.5 rounded-xl font-black italic transition-all text-sm active:scale-95">
             🏆 LEADERBOARD
           </Link>
-          <Link href="/dashboard/log-session" className="bg-yellow-500 text-black px-4 py-2.5 rounded-xl font-black italic transition-all hover:bg-yellow-400 text-sm active:scale-95">
+          {/* <Link href="/dashboard/log-session" className="bg-yellow-500 text-black px-4 py-2.5 rounded-xl font-black italic transition-all hover:bg-yellow-400 text-sm active:scale-95">
             + LOG SESSION
-          </Link>
+          </Link> */}
         </div>
       </div>
       
