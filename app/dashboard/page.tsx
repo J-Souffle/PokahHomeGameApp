@@ -199,18 +199,31 @@ export default function DashboardPage() {
                       itemStyle={{ fontWeight: '900' }}
                       separator=""
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
-                      formatter={(value: number, name: string, props: any) => {
-                        const { bankroll, sessionNet } = props.payload;
-                        return [
-                          <div className="flex flex-col gap-1 text-left" key="tooltip-content">
-                            <span className="text-yellow-500 text-lg font-black tracking-tighter">TOTAL: ${bankroll.toFixed(2)}</span>
-                            <span className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest font-bold">
-                              SESSION: {sessionNet >= 0 ? '+' : ''}${sessionNet.toFixed(2)}
-                            </span>
-                          </div>,
-                          null 
-                        ];
-                      }}
+                      formatter={(value: any, name: string, props: any) => {
+  const { bankroll, sessionNet } = props.payload;
+  
+  // Create the content as a single JSX element
+  const content = (
+    <div className="flex flex-col gap-1 text-left">
+      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+        Session Impact
+      </p>
+      <p className={`text-lg font-black italic ${sessionNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        {sessionNet >= 0 ? `+$${sessionNet.toFixed(2)}` : `-$${Math.abs(sessionNet).toFixed(2)}`}
+      </p>
+      <div className="h-px bg-zinc-800 my-1" />
+      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+        Total Bankroll
+      </p>
+      <p className="text-xl font-black italic text-white">
+        ${bankroll.toFixed(2)}
+      </p>
+    </div>
+  );
+
+  // Return the content as the "value" and an empty string as the "label"
+  return [content, ""];
+}}
                     />
                     <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
                     <Line 
