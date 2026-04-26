@@ -95,7 +95,7 @@ export default async function LeaderboardPage() {
             TOP <span className="text-yellow-500">DAWGS</span>
           </h1>
           <div className="h-1.5 w-24 bg-yellow-500 mt-4" />
-          <p className="text-zinc-600 mt-4 text-[10px] font-bold tracking-[0.5em] uppercase italic">The Lab Hall of Fame</p>
+          <p className="text-zinc-600 mt-4 text-[10px] font-bold tracking-[0.5em] uppercase italic">The Suite Hall of Fame</p>
         </header>
 
         {/* Milestone Cards Section */}

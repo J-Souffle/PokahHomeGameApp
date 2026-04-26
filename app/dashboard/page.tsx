@@ -154,7 +154,7 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
           <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">
-            Welcome back, <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'SHARK'}</span>
+            Welcome back, Mousier <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'Bond'}</span>
           </h1>
           <p className="text-zinc-500 text-[10px] mt-2 font-mono uppercase tracking-widest">{user?.email}</p>
         </div>

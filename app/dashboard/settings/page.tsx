@@ -118,7 +118,7 @@ export default function SettingsPage() {
 
               <div className="space-y-3">
                 <label className="block text-[9px] md:text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] px-1">
-                  Shark Alias (Display Name)
+                  Agent Alias (Display Name)
                 </label>
                 <div className="relative flex items-center group">
                   <User size={18} className="absolute left-5 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
