@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon } from 'lucide-react'
+import ActivityTicker from '@/components/ActivityTicker'
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -255,7 +256,10 @@ export default function DashboardPage() {
   </div>
 </div>
 
+<div className="m-4"><ActivityTicker /></div>
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
               <p className={`text-5xl md:text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -381,7 +385,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex gap-2 mt-1">
                       <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
-                        {row.final_chips} chips
+                        Total Balance ${row.final_chips}
                       </span>
                       <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
                         {row.rebuys} rebuys
