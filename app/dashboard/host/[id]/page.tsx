@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Target, MousePointer2, Trophy, Crosshair } from 'lucide-react'
+import { Target, MousePointer2, Trophy, Crosshair, Zap, UserCheck } from 'lucide-react'
 
 export default function HostLobby() {
   const params = useParams()
@@ -15,6 +15,40 @@ export default function HostLobby() {
   const [sessionData, setSessionData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [finalChips, setFinalChips] = useState<{[key: string]: number}>({})
+
+  // NIT RULE: Mark player as having played a hand
+  const markPlayed = async (playerId: string) => {
+    await supabase
+      .from('player_results')
+      .update({ has_nit_token: false })
+      .eq('id', playerId)
+  }
+
+  // HOST NIT RESET: Force clears the penalty and increments count
+  const handleHostNitReset = async () => {
+    const activeNits = players.filter(p => p.has_nit_token);
+    if (activeNits.length !== 1) return;
+    const loser = activeNits[0];
+    
+    try {
+      // 1. Increment the count for the loser
+      await supabase
+        .from('player_results')
+        .update({ nit_count: (loser.nit_count || 0) + 1 })
+        .eq('id', loser.id);
+
+      // 2. Reset everyone's token to true for the next round
+      const { error } = await supabase
+        .from('player_results')
+        .update({ has_nit_token: true })
+        .eq('session_id', sessionId); 
+
+      if (error) throw error;
+      getData();
+    } catch (err) {
+      console.error("Host Reset Error:", err);
+    }
+  }
 
   const togglePaid = async (playerId: string, currentStatus: boolean) => {
     const { error } = await supabase
@@ -46,7 +80,7 @@ export default function HostLobby() {
     try {
       const { data: session, error: sError } = await supabase
         .from('poker_sessions')
-        .select('join_code, buy_in, status, bounty_target_id, bounty_amount, last_rebuy_name, last_rebuy_time')
+        .select('*')
         .eq('id', sessionId)
         .single()
       
@@ -55,7 +89,7 @@ export default function HostLobby() {
 
       const { data: results, error: pError } = await supabase
         .from('player_results')
-        .select('id, user_id, has_paid, rebuys, final_chips, click_count, bounty_earned')
+        .select('*')
         .eq('session_id', sessionId)
       
       if (pError) throw pError
@@ -103,7 +137,7 @@ export default function HostLobby() {
         event: 'UPDATE', 
         schema: 'public', 
         table: 'poker_sessions', 
-        filter: `id=eq.${sessionId}` 
+        filter: `id=eq.${sessionId}`
       }, () => getData())
       .subscribe()
 
@@ -111,11 +145,41 @@ export default function HostLobby() {
   }, [sessionId, getData, supabase])
 
   const handleStartGame = async () => {
-    await supabase.from('poker_sessions').update({ status: 'active' }).eq('id', sessionId)
+    // START ENGINE: Set session to active AND reset all nit tokens to true
+    const sessionUpdate = supabase
+      .from('poker_sessions')
+      .update({ status: 'active' })
+      .eq('id', sessionId)
+
+    const nitReset = supabase
+      .from('player_results')
+      .update({ has_nit_token: true })
+      .eq('session_id', sessionId)
+
+    await Promise.all([sessionUpdate, nitReset])
+    getData()
   }
 
   const handleEndGame = async () => {
-    await supabase.from('poker_sessions').update({ status: 'completed' }).eq('id', sessionId)
+    const confirmEnd = confirm("End session and start settlement? This resets payment status for final payouts.")
+    if (!confirmEnd) return
+
+    try {
+      const sessionUpdate = supabase
+        .from('poker_sessions')
+        .update({ status: 'completed' })
+        .eq('id', sessionId)
+
+      const playerUpdate = supabase
+        .from('player_results')
+        .update({ has_paid: false })
+        .eq('session_id', sessionId)
+
+      await Promise.all([sessionUpdate, playerUpdate])
+      getData()
+    } catch (err) {
+      console.error("End Game Error:", err)
+    }
   }
 
   const triggerRebuy = async (playerId: string, displayName: string, currentRebuys: number) => {
@@ -162,7 +226,6 @@ export default function HostLobby() {
 
     const winnerResult = players.find(p => p.user_id === winnerId)
     
-    // Update winner earnings and clear session bounty + set praise message
     const winnerUpdate = supabase
       .from('player_results')
       .update({ bounty_earned: (winnerResult?.bounty_earned || 0) + sessionData.bounty_amount })
@@ -198,6 +261,8 @@ export default function HostLobby() {
     return (topPlayer.click_count || 0) > 0 ? topPlayer.user_id : null
   }, [players])
 
+  const activeNitPlayers = players.filter(p => p.has_nit_token);
+
   if (loading) return <div className="p-8 bg-zinc-950 min-h-screen text-white font-mono text-center flex items-center justify-center uppercase tracking-widest">Syncing Command Center...</div>
 
   return (
@@ -227,6 +292,49 @@ export default function HostLobby() {
           </div>
         </div>
 
+        {/* NIT TRACKER (ONLY WHILE ACTIVE) */}
+        {sessionData?.status === 'active' && (
+          <div className="mb-8 p-6 bg-zinc-900 border border-zinc-800 rounded-[2.5rem]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 flex items-center gap-2">
+                <Zap size={14} className="text-red-500" /> Nit Tokens Active: {activeNitPlayers.length}
+              </h3>
+              {activeNitPlayers.length === 1 && (
+                <button 
+                  onClick={handleHostNitReset}
+                  className="bg-red-600 text-white px-4 py-1 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 transition-colors"
+                >
+                  Force Reset & Penalty
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {activeNitPlayers.map(player => (
+                <button 
+                  key={player.id} 
+                  onClick={() => markPlayed(player.id)}
+                  className="p-4 bg-red-500/10 border border-red-500/50 rounded-2xl flex flex-col items-center hover:bg-green-500/10 hover:border-green-500 transition-all group"
+                >
+                  <span className="text-xs font-black uppercase italic text-red-500 group-hover:text-green-500 transition-colors">{player.display_name}</span>
+                  <span className="text-[8px] mt-1 font-bold text-red-500/40 uppercase group-hover:text-green-500/60 transition-colors">Mark Played</span>
+                </button>
+              ))}
+              {activeNitPlayers.length === 0 && (
+                <button 
+                  onClick={async () => {
+                    await supabase.from('player_results').update({ has_nit_token: true }).eq('session_id', sessionId);
+                    getData();
+                  }}
+                  className="col-span-full text-center py-4 text-zinc-700 text-[10px] font-black uppercase italic tracking-widest hover:text-white transition-colors"
+                >
+                  Click to start a new Nit Round
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ... remaining JSX ... */}
         {sessionData?.bounty_target_id && sessionData?.status !== 'completed' && (
           <div className="mb-8 p-6 bg-yellow-500/5 border border-yellow-500/20 rounded-[2rem] flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -272,7 +380,9 @@ export default function HostLobby() {
                       </button>
                       <div>
                         <p className="font-black text-xl uppercase italic leading-tight flex items-center gap-2">
-                          {player.display_name} {player.user_id === clickChampionId && <Trophy size={16} className="text-yellow-500" />}
+                          {player.display_name} 
+                          {player.user_id === clickChampionId && <Trophy size={16} className="text-yellow-500" />}
+                          {player.has_nit_token && <Zap size={14} className="text-red-500" />}
                         </p>
                         <div className="flex gap-3">
                           <p className={`text-[10px] font-mono uppercase ${profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -305,7 +415,10 @@ export default function HostLobby() {
                 <div key={player.id} className={`bg-zinc-900 border p-6 rounded-[2rem] flex justify-between items-center transition-all ${sessionData?.bounty_target_id === player.user_id ? 'border-yellow-500' : 'border-zinc-800'}`}>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-black text-xl italic uppercase tracking-tight">{player.display_name}</p>
+                      <p className="font-black text-xl italic uppercase tracking-tight flex items-center gap-2">
+                        {player.display_name}
+                        {player.has_nit_token === false && <UserCheck size={14} className="text-green-500" />}
+                      </p>
                       {(player.click_count || 0) > 0 && (
                         <div className="flex items-center gap-1 bg-zinc-800 px-2 py-1 rounded-lg">
                           <MousePointer2 size={10} className="text-zinc-500" />

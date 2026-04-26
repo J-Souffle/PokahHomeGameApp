@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2, Target, MousePointer2 } from 'lucide-react'
+import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2, Target, MousePointer2, Zap, AlertTriangle } from 'lucide-react'
 
 export default function PlayerLiveView() {
   const { id: sessionId } = useParams()
@@ -20,12 +20,16 @@ export default function PlayerLiveView() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { data: sess } = await supabase.from('poker_sessions').select('*').eq('id', sessionId).single()
-    setSession(sess)
+    // Fetch session and results in parallel for speed
+    const [sessRes, resultsRes] = await Promise.all([
+      supabase.from('poker_sessions').select('*').eq('id', sessionId).single(),
+      supabase.from('player_results').select('*').eq('session_id', sessionId)
+    ])
 
-    const { data: allResults } = await supabase.from('player_results').select('*').eq('session_id', sessionId)
-    
-    if (allResults) {
+    if (sessRes.data) setSession(sessRes.data)
+
+    if (resultsRes.data) {
+      const allResults = resultsRes.data
       const me = allResults.find(r => r.user_id === user.id)
       const userIds = allResults.map(r => r.user_id)
       
@@ -55,15 +59,17 @@ export default function PlayerLiveView() {
         totalRebuys: allResults.reduce((acc, r) => acc + (r.rebuys || 0), 0)
       })
 
-      if (sess?.status === 'completed') {
+      if (sessRes.data?.status === 'completed') {
         const ranked = playersWithNames.map(r => {
-          const buyInTotal = (1 + (r.rebuys || 0)) * (sess?.buy_in || 0)
+          const buyInTotal = (1 + (r.rebuys || 0)) * (sessRes.data?.buy_in || 0)
           return {
             id: r.user_id,
             name: r.display_name,
             profit: (r.final_chips || 0) + (r.bounty_earned || 0) - buyInTotal,
             clicks: r.click_count || 0,
-            bounties: r.bounty_earned || 0
+            bounties: r.bounty_earned || 0,
+            isNit: r.has_nit_token,
+            nit_count: r.nit_count || 0
           }
         }).sort((a, b) => b.profit - a.profit)
         
@@ -72,7 +78,54 @@ export default function PlayerLiveView() {
     }
   }, [sessionId, supabase])
 
+  // NIT LOGIC: Check if I am the last one holding a token
+  const activeNits = allPlayers.filter(p => p.has_nit_token);
+  const isLastNit = activeNits.length === 1 && myResult?.has_nit_token;
+
+  // Find the overall session loser for the settlement screen
+  const ultimateNitPlayer = useMemo(() => {
+    if (allPlayers.length === 0) return null;
+    const topNit = [...allPlayers].sort((a, b) => (b.nit_count || 0) - (a.nit_count || 0))[0];
+    return (topNit?.nit_count || 0) > 0 ? topNit : null;
+  }, [allPlayers]);
+
+  // Haptic feedback for the Last Nit
   useEffect(() => {
+    if (isLastNit && typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  }, [isLastNit]);
+
+  const handleConfirmNitPenalty = async () => {
+    if (activeNits.length !== 1) return;
+    const ultimateNit = activeNits[0];
+
+    try {
+      // OPTIMISTIC UPDATE: Clear UI immediately
+      setAllPlayers(prev => prev.map(p => ({ ...p, has_nit_token: true })));
+
+      // 1. Increment the nit_count
+      await supabase
+        .from('player_results')
+        .update({ nit_count: (ultimateNit.nit_count || 0) + 1 })
+        .eq('id', ultimateNit.id);
+
+      // 2. Reset ALL tokens
+      const { error } = await supabase
+        .from('player_results')
+        .update({ has_nit_token: true })
+        .eq('session_id', sessionId);
+
+      if (error) throw error;
+      
+      await fetchData(); 
+    } catch (err) {
+      console.error("Penalty error:", err);
+    }
+  }
+
+  useEffect(() => {
+    if (!sessionId) return
     fetchData()
     const channel = supabase
       .channel(`player-sync-${sessionId}`)
@@ -121,14 +174,8 @@ export default function PlayerLiveView() {
 
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: 'Poker Results',
-          text: text,
-          url: window.location.href,
-        });
-      } catch (err) {
-        console.log('Share canceled');
-      }
+        await navigator.share({ title: 'Poker Results', text: text, url: window.location.href });
+      } catch (err) { console.log('Share canceled'); }
     } else {
       navigator.clipboard.writeText(`${text}\n${window.location.href}`);
       alert('Results copied to clipboard!');
@@ -140,7 +187,6 @@ export default function PlayerLiveView() {
     return (stats.totalPlayers + stats.totalRebuys) * session.buy_in
   }, [session, stats])
 
-  // Determine the click champion
   const clickChampionId = useMemo(() => {
     if (allPlayers.length === 0) return null
     const topPlayer = allPlayers.reduce((prev, current) => 
@@ -168,9 +214,7 @@ export default function PlayerLiveView() {
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 leading-none">Lab Broadcast</p>
-                <h4 className="text-lg font-black uppercase italic leading-none mt-1">
-                  {session.last_rebuy_name}
-                </h4>
+                <h4 className="text-lg font-black uppercase italic leading-none mt-1">{session.last_rebuy_name}</h4>
               </div>
             </div>
           </div>
@@ -183,9 +227,7 @@ export default function PlayerLiveView() {
           session?.status === 'completed' ? 'bg-blue-500/10 border-blue-500 text-blue-500' :
           'bg-yellow-500/10 border-yellow-500 text-yellow-500'
         }`}>
-          {session?.status === 'active' ? '● Game Live' : 
-           session?.status === 'completed' ? 'Settlement Final' : 
-           'Waiting for Host'}
+          {session?.status === 'active' ? '● Game Live' : session?.status === 'completed' ? 'Settlement Final' : 'Waiting for Host'}
         </span>
         <h1 className="text-3xl font-black italic uppercase mt-4 tracking-tighter text-center">{myResult.display_name}</h1>
       </div>
@@ -193,7 +235,6 @@ export default function PlayerLiveView() {
       {session?.status === 'completed' ? (
         <div className="space-y-6 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
           
-          {/* PAYOUT STATUS - Starts as Waiting for Host until host clicks 'paid' in their dashboard */}
           <div className={`p-6 rounded-[2.5rem] border transition-all duration-500 ${
             myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-yellow-500/5 border-yellow-500/20 animate-pulse'
           }`}>
@@ -213,6 +254,21 @@ export default function PlayerLiveView() {
               </div>
             </div>
           </div>
+
+          {/* ULTIMATE NIT AWARD */}
+          {ultimateNitPlayer && (
+            <div className="bg-red-500/10 border border-red-500/50 p-6 rounded-[2.5rem] flex items-center justify-between overflow-hidden relative">
+              <div className="relative z-10">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Biggest Nit Award</p>
+                <h3 className="text-xl font-black italic uppercase text-white">{ultimateNitPlayer.display_name}</h3>
+              </div>
+              <div className="text-right relative z-10">
+                <p className="text-[10px] font-black uppercase text-zinc-500 leading-none">Total Penalties</p>
+                <p className="text-3xl font-black text-red-500">{ultimateNitPlayer.nit_count}</p>
+              </div>
+              <AlertTriangle size={80} className="absolute right-[-10px] top-[-10px] text-red-500/10 rotate-12" />
+            </div>
+          )}
 
           <div className="bg-white text-black rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(255,255,255,0.05)] relative overflow-hidden">
             <div className={`absolute top-0 right-0 w-32 h-32 opacity-10 translate-x-10 -translate-y-10 rounded-full ${myProfit >= 0 ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -250,28 +306,21 @@ export default function PlayerLiveView() {
             </div>
           </div>
 
-          <div className="py-2 text-center">
-             <button onClick={handleShare} className="w-full py-5 bg-zinc-900 border border-zinc-800 hover:border-zinc-500 text-zinc-400 hover:text-white rounded-[1.5rem] font-black uppercase text-[10px] tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl">
-               <Share2 size={16} /> Share Performance
-             </button>
-          </div>
-
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2.5rem]">
             <h3 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-500 mb-6 flex items-center gap-2">
               <Trophy size={14} className="text-yellow-500" /> Room Results
             </h3>
             <div className="space-y-4">
               {leaderboard.map((entry, i) => (
-                <div key={i} className={`flex justify-between items-center p-3 rounded-2xl transition-colors ${entry.name === myResult.display_name ? 'bg-zinc-800' : ''}`}>
+                <div key={i} className={`flex justify-between items-center p-3 rounded-2xl transition-colors ${entry.id === myResult.user_id ? 'bg-zinc-800' : ''}`}>
                   <div className="flex flex-col">
-                    <span className={`text-sm font-bold uppercase italic flex items-center gap-2 ${entry.name === myResult.display_name ? 'text-white' : 'text-zinc-400'}`}>
+                    <span className={`text-sm font-bold uppercase italic flex items-center gap-2 ${entry.id === myResult.user_id ? 'text-white' : 'text-zinc-400'}`}>
                       {entry.name} {entry.id === clickChampionId && <Trophy size={10} className="text-yellow-500" />}
                     </span>
                     <div className="flex gap-2">
                       <span className={`text-[9px] font-mono uppercase ${entry.id === clickChampionId ? 'text-yellow-500 font-bold' : 'text-zinc-600'}`}>
-                        {entry.clicks} clicks {entry.id === clickChampionId && '🏆'}
+                        {entry.clicks} clicks {entry.nit_count > 0 && `• ${entry.nit_count} NIT PENALTIES`}
                       </span>
-                      {entry.bounties > 0 && <span className="text-[9px] font-mono text-yellow-600 uppercase">${entry.bounties} Bounty</span>}
                     </div>
                   </div>
                   <span className={`font-mono text-sm font-bold ${entry.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -288,6 +337,46 @@ export default function PlayerLiveView() {
         </div>
       ) : (
         <div className="max-w-md mx-auto space-y-4">
+          
+          {/* NIT PENALTY ALERT */}
+          {/* NIT PENALTY ALERT */}
+{isLastNit && (
+  <div className="bg-red-600 text-white p-6 rounded-[2.5rem] shadow-[0_0_50px_rgba(220,38,38,0.5)] animate-in zoom-in duration-300 border-4 border-white/20 mb-6">
+    <div className="flex flex-col items-center text-center">
+      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 animate-pulse">
+        <AlertTriangle size={32} />
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-1">
+        ⚠️ YOU ARE THE ULTIMATE NIT
+      </p>
+      <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none mb-4">
+        PAY EVERYONE 1 BB
+      </h2>
+      <button 
+        onClick={handleConfirmNitPenalty} 
+        className="w-full bg-white text-red-600 py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all hover:bg-zinc-100"
+      >
+        Penalty Paid — Reset Tokens
+      </button>
+    </div>
+  </div>
+)}
+
+{/* OPTIONAL: Show a passive warning to other players so they know who to collect from */}
+{!isLastNit && activeNits.length === 1 && (
+  <div className="bg-zinc-900 border border-red-500/30 p-4 rounded-[2rem] mb-6 flex items-center gap-4">
+    <div className="bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center">
+      <AlertTriangle size={20} />
+    </div>
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nit Alert</p>
+      <p className="text-sm font-bold uppercase italic">
+        Collect 1 BB from <span className="text-red-500">{activeNits[0]?.display_name}</span>
+      </p>
+    </div>
+  </div>
+)}
+
           {hasBounty && (
             <div className={`p-6 rounded-[2.5rem] border-2 flex items-center justify-between overflow-hidden relative shadow-2xl transition-all duration-500 ${
               isTarget ? 'bg-red-500/10 border-red-500 animate-pulse' : 'bg-zinc-900 border-zinc-800'
@@ -296,26 +385,17 @@ export default function PlayerLiveView() {
                 <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isTarget ? 'text-red-500' : 'text-yellow-500/60'}`}>
                   {isTarget ? "⚠️ WARNING: YOU ARE THE" : "🎯 PRIORITY TARGET"}
                 </p>
-                <h2 className="text-2xl font-black italic uppercase tracking-tighter mt-1">
-                  {isTarget ? "BOUNTY" : bountyTargetName}
-                </h2>
+                <h2 className="text-2xl font-black italic uppercase tracking-tighter mt-1">{isTarget ? "BOUNTY" : bountyTargetName}</h2>
               </div>
               <div className="text-right relative z-10 font-mono">
                 <p className="text-[10px] font-black uppercase text-zinc-500 leading-none">Reward</p>
                 <p className="text-3xl font-black text-yellow-500 mt-1">${session.bounty_amount}</p>
               </div>
-              <div className="absolute right-[-15px] top-[-10px] opacity-10">
-                <Target size={100} className={isTarget ? 'text-red-500' : 'text-white'} />
-              </div>
             </div>
           )}
 
           <div className="relative group">
-            <button 
-              onClick={handleButtonClick}
-              className="w-full aspect-square bg-zinc-900 border-8 border-zinc-800 rounded-[3rem] flex flex-col items-center justify-center transition-all active:scale-95 active:bg-zinc-800 active:border-zinc-700 shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
+            <button onClick={handleButtonClick} className="w-full aspect-square bg-zinc-900 border-8 border-zinc-800 rounded-[3rem] flex flex-col items-center justify-center transition-all active:scale-95 active:bg-zinc-800 active:border-zinc-700 shadow-2xl relative overflow-hidden">
               <MousePointer2 size={48} className="text-zinc-700 mb-4 group-active:text-yellow-500 transition-colors" />
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-1">Session Taps</p>
               <p className="text-6xl font-black italic tracking-tighter text-white group-active:scale-110 transition-transform">{localClicks}</p>
