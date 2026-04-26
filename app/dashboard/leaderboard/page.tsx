@@ -121,7 +121,7 @@ export default async function LeaderboardPage() {
           <thead>
             <tr className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800">
               <th className="p-8 font-black text-center w-20">Rank</th>
-              <th className="p-8 font-black">Shark</th>
+              <th className="p-8 font-black">Agent</th>
               <th className="p-8 font-black text-center">Sessions</th>
               <th className="p-8 font-black text-right">Lifetime Profit</th>
             </tr>

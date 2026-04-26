@@ -7,6 +7,7 @@ export default function CreateGamePage() {
   const supabase = createClient()
   const router = useRouter()
   const [buyIn, setBuyIn] = useState(20)
+  const [sessionName, setSessionName] = useState('') // New state for name
   const [loading, setLoading] = useState(false)
 
   // Generates a simple 4-character join code (e.g., A7X2)
@@ -15,43 +16,66 @@ export default function CreateGamePage() {
   }
 
   const handleCreateGame = async () => {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) return
+  setLoading(true)
+  console.log("🚀 [Debug] Starting game creation...")
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  console.log("👤 [Debug] Current User:", user?.id || "No user found")
 
-    const joinCode = generateJoinCode()
-
-    const { data, error } = await supabase
-      .from('poker_sessions')
-      .insert({
-        host_id: user.id,
-        buy_in: buyIn,
-        join_code: joinCode,
-        status: 'waiting'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error(error)
-      alert("Failed to initialize session.")
-      setLoading(false)
-    } else {
-      // Redirect to the Host Console for this specific game
-      router.push(`/dashboard/host/${data.id}`)
-    }
+  if (!user) {
+    setLoading(false)
+    return
   }
+
+  const joinCode = generateJoinCode()
+  const payload = {
+    host_id: user.id,
+    name: sessionName.trim() || null,
+    buy_in: buyIn,
+    join_code: joinCode,
+    status: 'waiting'
+  }
+
+  console.log("📦 [Debug] Sending Payload to Supabase:", payload)
+
+  const { data, error } = await supabase
+    .from('poker_sessions')
+    .insert(payload)
+    .select()
+    .single()
+
+  if (error) {
+    // This will tell us if the error is "Column not found" (42703) or something else
+    console.error("❌ [Debug] Supabase Insert Error:", error)
+    alert(`Failed to initialize session: ${error.message}`)
+    setLoading(false)
+  } else {
+    console.log("✅ [Debug] Session Created Successfully:", data)
+    router.push(`/dashboard/host/${data.id}`)
+  }
+}
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8 flex items-center justify-center font-sans">
       <div className="w-full max-w-md bg-zinc-900/50 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter mb-2">New Lab Session</h1>
+          <h1 className="text-4xl font-black italic uppercase tracking-tighter mb-2">New High Table Session</h1>
           <p className="text-zinc-500 text-xs font-mono uppercase tracking-[0.2em]">Configure Game Parameters</p>
         </div>
 
         <div className="space-y-8">
+          {/* Session Name Input */}
+          <div>
+            <label className="text-zinc-600 text-[10px] font-black uppercase tracking-widest block mb-3">Session Name (Optional)</label>
+            <input 
+              type="text"
+              placeholder="e.g. Friday Night Heist"
+              value={sessionName}
+              onChange={(e) => setSessionName(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-4 px-5 text-sm font-bold focus:outline-none focus:border-yellow-500 transition-colors placeholder:text-zinc-700"
+            />
+          </div>
+
           <div>
             <label className="text-zinc-600 text-[10px] font-black uppercase tracking-widest block mb-4">Initial Buy-In ($)</label>
             <div className="flex items-center gap-6">

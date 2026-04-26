@@ -86,7 +86,7 @@ export default function JoinGamePage() {
             <span className="text-4xl animate-pulse">🃏</span>
           </div>
           <h1 className="text-5xl font-black italic uppercase tracking-tighter leading-none mb-3">
-            JOIN THE <span className="text-yellow-500">LAB</span>
+            JOIN THE <span className="text-yellow-500">HIGH TABLE</span>
           </h1>
           <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.4em]">Initialize Session Access</p>
         </div>

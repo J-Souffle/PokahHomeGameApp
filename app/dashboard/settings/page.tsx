@@ -91,7 +91,7 @@ export default function SettingsPage() {
           className="group inline-flex items-center gap-2 text-zinc-600 hover:text-white transition-all mb-8 md:mb-12 font-black italic text-[10px] tracking-[0.3em] uppercase"
         >
           <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
-          Back to the Lab
+          Back to the High Table
         </Link>
 
         <header className="mb-10 md:mb-14">

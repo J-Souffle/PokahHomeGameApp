@@ -165,7 +165,7 @@ export default function PlayerLiveView() {
 
   const handleShare = async () => {
     const myProfitVal = (myResult.final_chips || 0) + (myResult.bounty_earned || 0) - ((1 + myResult.rebuys) * session.buy_in)
-    const text = `🃏 Poker Session: ${session?.game_name || 'The Lab'}\n` +
+    const text = `🃏 Poker Session: ${session?.game_name || 'The High Table'}\n` +
       `👤 Player: ${myResult.display_name}\n` +
       `💰 Cashed Out: $${myResult.final_chips || 0}\n` +
       (myResult.bounty_earned > 0 ? `🎯 Bounties: $${myResult.bounty_earned}\n` : '') +
@@ -213,7 +213,7 @@ export default function PlayerLiveView() {
                 {session.last_rebuy_name.includes('COLLECTED') ? '🎯' : '💸'}
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 leading-none">Lab Broadcast</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 leading-none">High Table Broadcast</p>
                 <h4 className="text-lg font-black uppercase italic leading-none mt-1">{session.last_rebuy_name}</h4>
               </div>
             </div>
@@ -332,7 +332,7 @@ export default function PlayerLiveView() {
           </div>
           
           <button onClick={() => router.push('/dashboard')} className="w-full group py-6 bg-white text-black rounded-[2rem] font-black uppercase italic tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all">
-             <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" /> Return to the Lab
+             <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" /> Return to the High Table
           </button>
         </div>
       ) : (
@@ -435,7 +435,7 @@ export default function PlayerLiveView() {
           </div>
 
           <button onClick={() => router.push('/dashboard')} className="w-full group py-6 bg-zinc-900 border border-zinc-800 text-white rounded-[2rem] font-black uppercase italic tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all">
-             <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" /> Return to the Lab
+             <ChevronLeft size={18} className="transition-transform group-hover:-translate-x-1" /> Return to the High Table
           </button>
         </div>
       )}

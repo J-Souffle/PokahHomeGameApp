@@ -67,15 +67,16 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('player_results')
         .select(`
-          id, 
-          session_id,
-          final_chips, 
-          rebuys, 
-          created_at, 
-          user_id,
-          poker_sessions (
-            buy_in
-          )
+            id, 
+            session_id,
+            final_chips, 
+            rebuys, 
+            created_at, 
+            user_id,
+            poker_sessions (
+            buy_in,
+            name
+            )
         `)
         .eq('user_id', authUser.id)
         .order('created_at', { ascending: true });
@@ -144,17 +145,17 @@ export default function DashboardPage() {
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-950">
-      <div className="p-8 text-white font-mono animate-pulse uppercase tracking-[0.3em] text-sm">Accessing The Lab...</div>
+      <div className="p-8 text-white font-mono animate-pulse uppercase tracking-[0.3em] text-sm">Accessing The High Table...</div>
     </div>
   )
 
   return (
-    <div className="p-8 bg-zinc-950 min-h-screen text-white font-sans">
+    <div className="p-4 md:p-8 bg-zinc-950 min-h-screen text-white font-sans">
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
-          <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">
-            Welcome back, Monsieur <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'Bond'}</span>
+          <h1 className="text-3xl md:text-4xl font-black italic tracking-tighter uppercase leading-none">
+            Welcome back Monsieur <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'Bond'}</span>
           </h1>
           <p className="text-zinc-500 text-[10px] mt-2 font-mono uppercase tracking-widest">{user?.email}</p>
         </div>
@@ -179,72 +180,85 @@ export default function DashboardPage() {
       {results.length > 0 ? (
         <>
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
-            <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
-            <div className="w-full" style={{ height: '350px', minHeight: '350px' }}>
-              {isMounted && (
-                <ResponsiveContainer width="100%" height="100%" key={`chart-${results.length}`}>
-                  <LineChart data={chartData} margin={{ left: -20, right: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
-                    <XAxis 
-                      dataKey="u_id" 
-                      stroke="#52525b" 
-                      fontSize={10} 
-                      tickLine={false} 
-                      axisLine={false} 
-                      tickFormatter={(idx) => chartData[idx]?.displayDate || ''}
-                    />
-                    <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} dx={-10} tickFormatter={(val) => `$${val}`} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
-                      itemStyle={{ fontWeight: '900' }}
-                      separator=""
-                      labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
-                      formatter={(value: any, name: any, props: any) => {
-  const { bankroll, sessionNet } = props.payload;
+  <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
   
-  // Create the content as a single JSX element
-  const content = (
-    <div className="flex flex-col gap-1 text-left">
-      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-        Session Impact
-      </p>
-      <p className={`text-lg font-black italic ${sessionNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-        {sessionNet >= 0 ? `+$${sessionNet.toFixed(2)}` : `-$${Math.abs(sessionNet).toFixed(2)}`}
-      </p>
-      <div className="h-px bg-zinc-800 my-1" />
-      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-        Total Bankroll
-      </p>
-      <p className="text-xl font-black italic text-white">
-        ${bankroll.toFixed(2)}
-      </p>
-    </div>
-  );
+  {/* Added relative position and ensured explicit height/min-height for Recharts calculation */}
+  <div className="w-full relative" style={{ height: '350px', minHeight: '350px' }}>
+    {isMounted && results.length > 0 && (
+      <ResponsiveContainer 
+        width="100%" 
+        height="100%" 
+        minWidth={0} 
+        minHeight={0} 
+        key={`chart-${results.length}`}
+      >
+        <LineChart data={chartData} margin={{ left: -20, right: 10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
+          <XAxis 
+            dataKey="u_id" 
+            stroke="#52525b" 
+            fontSize={10} 
+            tickLine={false} 
+            axisLine={false} 
+            tickFormatter={(idx) => chartData[idx]?.displayDate || ''}
+          />
+          <YAxis 
+            stroke="#52525b" 
+            fontSize={10} 
+            tickLine={false} 
+            axisLine={false} 
+            dx={-10} 
+            tickFormatter={(val) => `$${val}`} 
+          />
+          <Tooltip 
+            contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
+            itemStyle={{ fontWeight: '900' }}
+            separator=""
+            labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
+            formatter={(value: any, name: any, props: any) => {
+              const { bankroll, sessionNet } = props.payload;
+              
+              const content = (
+                <div className="flex flex-col gap-1 text-left">
+                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                    Session Impact
+                  </p>
+                  <p className={`text-lg font-black italic ${sessionNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {sessionNet >= 0 ? `+$${sessionNet.toFixed(2)}` : `-$${Math.abs(sessionNet).toFixed(2)}`}
+                  </p>
+                  <div className="h-px bg-zinc-800 my-1" />
+                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                    Total Bankroll
+                  </p>
+                  <p className="text-xl font-black italic text-white">
+                    ${bankroll.toFixed(2)}
+                  </p>
+                </div>
+              );
 
-  // Return the content as the first element and name as the second
-  return [content, name];
-}}
-                    />
-                    <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="bankroll" 
-                      stroke="#eab308" 
-                      strokeWidth={5} 
-                      dot={{ r: 6, fill: '#09090b', stroke: '#eab308', strokeWidth: 2 }} 
-                      activeDot={{ r: 8, fill: '#fff', stroke: '#eab308', strokeWidth: 0 }}
-                      isAnimationActive={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
+              return [content, name];
+            }}
+          />
+          <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
+          <Line 
+            type="monotone" 
+            dataKey="bankroll" 
+            stroke="#eab308" 
+            strokeWidth={5} 
+            dot={{ r: 6, fill: '#09090b', stroke: '#eab308', strokeWidth: 2 }} 
+            activeDot={{ r: 8, fill: '#fff', stroke: '#eab308', strokeWidth: 0 }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    )}
+  </div>
+</div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
-              <p className={`text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <p className={`text-5xl md:text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 ${stats.total.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50 flex justify-between items-center">
@@ -258,7 +272,7 @@ export default function DashboardPage() {
               <p className="text-yellow-500 text-sm font-bold uppercase tracking-widest flex items-center gap-2">
                 <Trophy size={16} /> Current Jackpot
               </p>
-              <p className="text-7xl font-black mt-2 tracking-tighter text-white">
+              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter text-white">
                 ${globalJackpot.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50">
@@ -268,15 +282,14 @@ export default function DashboardPage() {
 
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Win Rate</p>
-              <p className="text-7xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
+              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
             </div>
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Sessions</p>
-              <p className="text-7xl font-black mt-2 tracking-tighter">{stats.count}</p>
+              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter">{stats.count}</p>
             </div>
           </div>
 
-          {/* ... rest of the component remains the same ... */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
              <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
                 <div className="w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">
@@ -349,49 +362,47 @@ export default function DashboardPage() {
           </div>
 
           <div className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 overflow-hidden shadow-2xl mb-12">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800">
-                  <th className="p-8 font-black">Session Details</th>
-                  <th className="p-8 font-black text-center">Date</th>
-                  <th className="p-8 font-black text-right">Net Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...results].reverse().map((row) => (
-                  <tr 
-                    key={row.id} 
-                    onClick={() => router.push(`/dashboard/session/${row.session_id}`)}
-                    className="border-b border-zinc-800/50 hover:bg-white/[0.02] cursor-pointer transition-colors group"
-                  >
-                    <td className="p-8 font-bold text-zinc-200">
-                      <div className="flex items-center gap-3">
-                        Private Session 
-                        <ChevronRight size={14} className="text-zinc-700 group-hover:translate-x-1 transition-transform" />
-                      </div>
-                      <div className="flex gap-2 mt-1">
-                        <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
-                          {row.final_chips} chips
-                        </span>
-                        <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
-                          {row.rebuys} rebuys
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-8 text-zinc-500 text-center font-mono text-sm">{new Date(row.created_at).toLocaleDateString()}</td>
-                    <td className="p-8 text-right">
-                      <span className={`font-black text-2xl transition-all ${row.calculatedProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {row.calculatedProfit >= 0 ? `+$${row.calculatedProfit.toFixed(2)}` : `-$${Math.abs(row.calculatedProfit).toFixed(2)}`}
+            <div className="hidden md:grid grid-cols-3 text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800 p-8">
+              <span className="font-black">Session Details</span>
+              <span className="font-black text-center">Date</span>
+              <span className="font-black text-right">Net Result</span>
+            </div>
+            <div>
+              {[...results].reverse().map((row) => (
+                <div 
+                  key={row.id} 
+                  onClick={() => router.push(`/dashboard/session/${row.session_id}`)}
+                  className="flex flex-col md:grid md:grid-cols-3 items-start md:items-center p-6 md:p-8 border-b border-zinc-800/50 hover:bg-white/[0.02] cursor-pointer transition-colors group"
+                >
+                  <div className="w-full md:w-auto mb-2 md:mb-0">
+                    <div className="flex items-center gap-3 font-bold text-zinc-200">
+                      {row.poker_sessions?.name || 'Private Session'} 
+                      <ChevronRight size={14} className="text-zinc-700 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
+                        {row.final_chips} chips
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-tighter border border-zinc-800 px-2 rounded">
+                        {row.rebuys} rebuys
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-zinc-500 md:text-center font-mono text-sm mb-2 md:mb-0">
+                    {new Date(row.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="w-full md:w-auto text-left md:text-right">
+                    <span className={`font-black text-2xl md:text-2xl transition-all ${row.calculatedProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {row.calculatedProfit >= 0 ? `+$${row.calculatedProfit.toFixed(2)}` : `-$${Math.abs(row.calculatedProfit).toFixed(2)}`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
+        <div className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10 text-center px-4">
           <p className="text-zinc-600 font-black italic uppercase tracking-widest text-lg">No session data found</p>
           <button onClick={getData} className="mt-4 text-yellow-500 font-bold text-sm underline">RETRY FETCH</button>
         </div>
