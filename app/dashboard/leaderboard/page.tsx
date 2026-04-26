@@ -1,7 +1,16 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
-import { ChevronLeft, Trophy, Zap, Anchor, Flame } from 'lucide-react'
+import { ChevronLeft, Trophy, Zap, Anchor, Flame, ChevronRight } from 'lucide-react'
+
+interface PlayerStats {
+  name: string;
+  totalProfit: number;
+  games: number;
+  bestSingleWin: number;
+  biggestComeback: number;
+  rebuys: number;
+}
 
 export default async function LeaderboardPage() {
   const cookieStore = await cookies()
@@ -11,7 +20,6 @@ export default async function LeaderboardPage() {
     { cookies: { getAll() { return cookieStore.getAll() } } }
   )
 
-  // Fetch results with session info to calculate rebuys/buy-ins for comeback logic
   const { data: leaderboard, error } = await supabase
     .from('player_results')
     .select(`
@@ -24,7 +32,7 @@ export default async function LeaderboardPage() {
 
   if (error) console.error("Leaderboard Error:", error)
 
-  const totals = leaderboard?.reduce((acc: any, curr: any) => {
+  const totals = leaderboard?.reduce((acc: Record<string, PlayerStats>, curr: any) => {
     const id = curr.user_id;
     if (!acc[id]) {
       const p = curr.profiles;
@@ -48,12 +56,10 @@ export default async function LeaderboardPage() {
     acc[id].games += 1;
     acc[id].rebuys += rebuys;
     
-    // Greatest Comeback Logic (Profit on a game where they rebought at least twice)
     if (rebuys >= 2 && profit > acc[id].biggestComeback) {
       acc[id].biggestComeback = profit;
     }
 
-    // High Roller Logic (Single largest net win)
     if (profit > acc[id].bestSingleWin) {
       acc[id].bestSingleWin = profit;
     }
@@ -61,105 +67,85 @@ export default async function LeaderboardPage() {
     return acc;
   }, {});
 
-  const playerArray = Object.values(totals || {});
+  const playerArray = Object.values(totals || {}) as PlayerStats[];
   
-  const sortedLeaderboard = [...playerArray].sort((a: any, b: any) => b.totalProfit - a.totalProfit);
-  
-  // Find global "Kings" for the Milestone cards
-  const ironMan = [...playerArray].sort((a: any, b: any) => b.games - a.games)[0];
-  const comebackKing = [...playerArray].sort((a: any, b: any) => b.biggestComeback - a.biggestComeback)[0];
-  const highRoller = [...playerArray].sort((a: any, b: any) => b.bestSingleWin - a.bestSingleWin)[0];
+  const sortedLeaderboard = [...playerArray].sort((a, b) => b.totalProfit - a.totalProfit);
+  const ironMan = [...playerArray].sort((a, b) => b.games - a.games)[0];
+  const comebackKing = [...playerArray].sort((a, b) => b.biggestComeback - a.biggestComeback)[0];
+  const highRoller = [...playerArray].sort((a, b) => b.bestSingleWin - a.bestSingleWin)[0];
 
   return (
-    <div className="p-8 bg-black min-h-screen text-white font-sans selection:bg-yellow-500/30">
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes subtle-glow {
-          0%, 100% { border-color: rgba(234, 179, 8, 0.2); box-shadow: 0 0 20px rgba(234, 179, 8, 0.05); }
-          50% { border-color: rgba(234, 179, 8, 0.6); box-shadow: 0 0 40px rgba(234, 179, 8, 0.2); }
-        }
-        .top-dawg-glow { animation: subtle-glow 3s infinite ease-in-out; }
-      `}} />
-      
+    <div className="min-h-screen bg-zinc-950 text-white p-8 font-sans">
+      <Link href="/dashboard" className="inline-flex items-center gap-2 text-zinc-500 hover:text-white transition-colors mb-12 font-black italic text-[10px] tracking-widest uppercase">
+        <ChevronLeft size={14} /> Back to Dashboard
+      </Link>
 
-      <div className="max-w-4xl mx-auto">
-        {/* Navigation Link */}
-        <Link 
-          href="/dashboard" 
-          className="group flex items-center gap-2 text-zinc-600 hover:text-white transition-all mb-12 font-black italic text-[10px] tracking-[0.3em] uppercase"
-        >
-          <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          Back to the Lab
-        </Link>
-        <header className="mb-12">
-          <h1 className="text-7xl font-black italic tracking-tighter uppercase leading-none text-white">
-            TOP <span className="text-yellow-500">DAWGS</span>
-          </h1>
-          <div className="h-1.5 w-24 bg-yellow-500 mt-4" />
-          <p className="text-zinc-600 mt-4 text-[10px] font-bold tracking-[0.5em] uppercase italic">The Suite Hall of Fame</p>
-        </header>
+      <header className="mb-12">
+        <h1 className="text-6xl font-black italic tracking-tighter uppercase leading-none">Hall of <span className="text-yellow-500">Agents</span></h1>
+        <p className="text-zinc-500 text-[10px] mt-4 font-mono uppercase tracking-[0.4em]">Global Lifetime Standings</p>
+      </header>
 
-        {/* Milestone Cards Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-          <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
-            <div className="text-yellow-500 mb-3"><Trophy size={20}/></div>
-            <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">High Roller</p>
-            <p className="text-xl font-black italic uppercase">{highRoller?.name}</p>
-            <p className="text-zinc-600 text-[10px] font-mono">+${highRoller?.bestSingleWin.toFixed(2)} single game</p>
+      {/* Milestone Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem]">
+          <div className="w-12 h-12 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500 mb-6">
+            <Trophy size={24} />
           </div>
-          <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
-            <div className="text-green-500 mb-3"><Zap size={20}/></div>
-            <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Comeback King</p>
-            <p className="text-xl font-black italic uppercase">{comebackKing?.name}</p>
-            <p className="text-zinc-600 text-[10px] font-mono">Won after 2+ rebuys</p>
-          </div>
-          <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl">
-            <div className="text-blue-500 mb-3"><Anchor size={20}/></div>
-            <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Iron Man</p>
-            <p className="text-xl font-black italic uppercase">{ironMan?.name}</p>
-            <p className="text-zinc-600 text-[10px] font-mono">{ironMan?.games} sessions logged</p>
-          </div>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">High Roller</p>
+          <p className="text-2xl font-black italic uppercase text-white">{highRoller?.name || '---'}</p>
+          <p className="text-yellow-500 font-mono text-xs mt-2">+${highRoller?.bestSingleWin.toFixed(2)} Best Game</p>
         </div>
 
-        {/* Main Leaderboard */}
-        <div className="space-y-4">
-          {sortedLeaderboard.map((player: any, i) => {
-            const isFirst = i === 0;
-            const isIronMan = player.name === ironMan?.name;
-            return (
-              <div 
-                key={i} 
-                className={`flex justify-between items-center p-8 rounded-2xl border transition-all duration-500 ${
-                  isFirst 
-                    ? 'top-dawg-glow bg-zinc-900/90 border-yellow-500/50 scale-[1.02] shadow-2xl' 
-                    : 'bg-zinc-900/30 border-zinc-800/50 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-8">
-                  <span className={`text-4xl font-black italic ${
-                    isFirst ? 'text-yellow-500' : i === 1 ? 'text-zinc-400' : i === 2 ? 'text-orange-900' : 'text-zinc-800'
-                  }`}>
-                    {i + 1}
-                  </span>
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-black text-2xl tracking-tight uppercase italic text-zinc-100">{player.name}</p>
-                      {isFirst && <span className="text-[9px] bg-yellow-500 text-black px-2 py-0.5 font-black uppercase rounded-sm">Apex</span>}
-                      {isIronMan && <Flame size={14} className="text-orange-600 animate-pulse" />}
-                    </div>
-                    <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-black mt-1">
-                      {player.games} SESSIONS / {player.rebuys} TOTAL REBUYS
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`text-3xl font-mono font-black tracking-tighter ${player.totalProfit >= 0 ? 'text-green-500' : 'text-red-600'}`}>
+        <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem]">
+          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 mb-6">
+            <Anchor size={24} />
+          </div>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Iron Man</p>
+          <p className="text-2xl font-black italic uppercase text-white">{ironMan?.name || '---'}</p>
+          <p className="text-blue-500 font-mono text-xs mt-2">{ironMan?.games} Total Sessions</p>
+        </div>
+
+        <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem]">
+          <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-500 mb-6">
+            <Flame size={24} />
+          </div>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1">Comeback King</p>
+          <p className="text-2xl font-black italic uppercase text-white">{comebackKing?.name || '---'}</p>
+          <p className="text-green-500 font-mono text-xs mt-2">+${comebackKing?.biggestComeback.toFixed(2)} 2+ Rebuy Win</p>
+        </div>
+      </div>
+
+      {/* Main Leaderboard Table */}
+      <div className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 overflow-hidden shadow-2xl">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800">
+              <th className="p-8 font-black text-center w-20">Rank</th>
+              <th className="p-8 font-black">Shark</th>
+              <th className="p-8 font-black text-center">Sessions</th>
+              <th className="p-8 font-black text-right">Lifetime Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedLeaderboard.map((player, index) => (
+              <tr key={player.name} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors group">
+                <td className="p-8 text-center font-black italic text-2xl text-zinc-700 group-hover:text-yellow-500 transition-colors">
+                  #{index + 1}
+                </td>
+                <td className="p-8">
+                  <p className="font-black text-xl italic uppercase tracking-tighter text-zinc-200">{player.name}</p>
+                  <p className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest">{player.rebuys} Total Rebuys</p>
+                </td>
+                <td className="p-8 text-center font-mono text-zinc-400 font-bold">{player.games}</td>
+                <td className="p-8 text-right">
+                  <span className={`font-black text-3xl tracking-tighter ${player.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                     {player.totalProfit >= 0 ? `+$${player.totalProfit.toFixed(2)}` : `-$${Math.abs(player.totalProfit).toFixed(2)}`}
-                  </p>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
