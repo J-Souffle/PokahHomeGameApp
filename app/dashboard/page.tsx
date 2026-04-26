@@ -10,10 +10,11 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null) // Added for Display Name
+  const [profile, setProfile] = useState<any>(null) 
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
+  const [globalJackpot, setGlobalJackpot] = useState(0) // New State for Jackpot
 
   const handleTransform = useCallback((rawData: any[]) => {
     const DEFAULT_BUY_IN = 5; 
@@ -52,6 +53,16 @@ export default function DashboardPage() {
         .single()
       
       if (profileData) setProfile(profileData)
+
+      // Fetch Global Jackpot from most recent session
+    // 2. INSERT THE JACKPOT FETCH HERE 
+    const { data: settings } = await supabase
+      .from('global_settings')
+      .select('jackpot_amount')
+      .eq('id', 'poker_config')
+      .single()
+
+    if (settings) setGlobalJackpot(settings.jackpot_amount || 0)
 
       const { data, error } = await supabase
         .from('player_results')
@@ -142,7 +153,6 @@ export default function DashboardPage() {
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div>
-          {/* Personal Shark Alias Welcome */}
           <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">
             Welcome back, <span className="text-yellow-500">{profile?.display_name || profile?.full_name || 'SHARK'}</span>
           </h1>
@@ -150,24 +160,20 @@ export default function DashboardPage() {
         </div>
         
        <div className="flex flex-wrap gap-3">
-  <Link href="/dashboard/leaderboard" className="...">🏆 LEADERBOARD</Link>
-  
-  <Link href="/dashboard/join" className="...">🚀 JOIN LOBBY</Link>
-  {/* ONLY SHOW IF ROLE IS HOST */}
-  {profile?.role === 'host' && (
-    <>
-      <Link href="/dashboard/host" className="bg-blue-600 ...">
-        📡 LIVE CONTROL
-      </Link>
-      <Link href="/dashboard/log-session" className="bg-zinc-800 ...">
-        📝 LOG SESSION
-      </Link>
-    </>
-  )}
-
-  <Link href="/dashboard/settings" className="...">⚙️ SETTINGS</Link>
-</div>
-        
+          <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-zinc-800 transition-all">🏆 LEADERBOARD</Link>
+          <Link href="/dashboard/join" className="bg-yellow-500 text-black px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-yellow-400 transition-all">🚀 JOIN LOBBY</Link>
+          {profile?.role === 'host' && (
+            <>
+              <Link href="/dashboard/host" className="bg-blue-600 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-blue-500 transition-all">
+                📡 LIVE CONTROL
+              </Link>
+              <Link href="/dashboard/log-session" className="bg-zinc-800 border border-zinc-700 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-zinc-700 transition-all">
+                📝 LOG SESSION
+              </Link>
+            </>
+          )}
+          <Link href="/dashboard/settings" className="bg-zinc-900 border border-zinc-800 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-zinc-800 transition-all">⚙️ SETTINGS</Link>
+        </div>
       </div>
       
       {results.length > 0 ? (
@@ -195,7 +201,6 @@ export default function DashboardPage() {
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
                       formatter={(value: number, name: string, props: any) => {
                         const { bankroll, sessionNet } = props.payload;
-                        // Fixed Tooltip Formatting to remove extra colon
                         return [
                           <div className="flex flex-col gap-1 text-left" key="tooltip-content">
                             <span className="text-yellow-500 text-lg font-black tracking-tighter">TOTAL: ${bankroll.toFixed(2)}</span>
@@ -223,7 +228,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
               <p className={`text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -234,6 +239,20 @@ export default function DashboardPage() {
                 <span className="text-zinc-400 font-mono text-sm font-bold">${stats.totalBuyIns.toFixed(2)}</span>
               </div>
             </div>
+
+            {/* NEW: Global Jackpot Card */}
+            <div className="bg-zinc-900/50 p-8 rounded-3xl border border-yellow-500/30 shadow-sm relative overflow-hidden">
+              <p className="text-yellow-500 text-sm font-bold uppercase tracking-widest flex items-center gap-2">
+                <Trophy size={16} /> Current Jackpot
+              </p>
+              <p className="text-7xl font-black mt-2 tracking-tighter text-white">
+                ${globalJackpot.toFixed(2)}
+              </p>
+              <div className="mt-4 pt-4 border-t border-zinc-800/50">
+                 <span className="text-zinc-600 text-xs font-black uppercase tracking-widest">Community Pool</span>
+              </div>
+            </div>
+
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Win Rate</p>
               <p className="text-7xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
@@ -244,6 +263,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* ... rest of the component remains the same ... */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
              <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
                 <div className="w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">

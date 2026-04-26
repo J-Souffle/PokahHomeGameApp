@@ -2,30 +2,47 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/client'
 import Link from 'next/link'
-import { ChevronLeft, User, LogOut, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, User, LogOut, ShieldCheck, Trophy } from 'lucide-react'
 
 export default function SettingsPage() {
   const supabase = createClient()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState('') // Added to check for host
+  const [jackpot, setJackpot] = useState('') // New state for Jackpot
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    async function getProfile() {
+    async function getData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setEmail(user.email || '')
-        const { data } = await supabase
+        
+        // Fetch Profile for Display Name and Role
+        const { data: profileData } = await supabase
           .from('profiles')
-          .select('display_name, full_name')
+          .select('display_name, full_name, role')
           .eq('id', user.id)
           .single()
         
-        if (data) setName(data.display_name || data.full_name || '')
+        if (profileData) {
+          setName(profileData.display_name || profileData.full_name || '')
+          setRole(profileData.role || '')
+          
+          // If they are a host, fetch the current global jackpot
+          if (profileData.role === 'host') {
+            const { data: settings } = await supabase
+              .from('global_settings')
+              .select('jackpot_amount')
+              .eq('id', 'poker_config')
+              .single()
+            if (settings) setJackpot(settings.jackpot_amount.toString())
+          }
+        }
       }
     }
-    getProfile()
+    getData()
   }, [supabase])
 
   const updateProfile = async () => {
@@ -34,15 +51,26 @@ export default function SettingsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {
-      const { error } = await supabase
+      // 1. Update Profile Alias
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({ display_name: name })
         .eq('id', user.id)
       
-      if (error) {
-        setMessage('Error: ' + error.message)
+      // 2. Update Global Jackpot (Only if Host)
+      let jackpotError = null
+      if (role === 'host') {
+        const { error } = await supabase
+          .from('global_settings')
+          .update({ jackpot_amount: parseFloat(jackpot) || 0 })
+          .eq('id', 'poker_config')
+        jackpotError = error
+      }
+      
+      if (profileError || jackpotError) {
+        setMessage('Error updating records.')
       } else {
-        setMessage('Identity Updated.')
+        setMessage('Identity & Settings Updated.')
         setTimeout(() => setMessage(''), 3000)
       }
     }
@@ -58,7 +86,6 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-black text-white selection:bg-yellow-500/30 px-4 py-8 md:p-12">
       <div className="max-w-xl mx-auto flex flex-col min-h-[calc(100vh-6rem)]">
         
-        {/* Navigation */}
         <Link 
           href="/dashboard" 
           className="group inline-flex items-center gap-2 text-zinc-600 hover:text-white transition-all mb-8 md:mb-12 font-black italic text-[10px] tracking-[0.3em] uppercase"
@@ -67,7 +94,6 @@ export default function SettingsPage() {
           Back to the Lab
         </Link>
 
-        {/* Header */}
         <header className="mb-10 md:mb-14">
           <h1 className="text-5xl md:text-7xl font-black italic tracking-tighter uppercase leading-none">
             USER <span className="text-yellow-500">INTEL</span>
@@ -76,12 +102,10 @@ export default function SettingsPage() {
           <p className="text-zinc-600 mt-6 text-[10px] font-bold tracking-[0.4em] uppercase">Configure your profile</p>
         </header>
 
-        {/* Form Container */}
         <div className="flex-grow space-y-6">
           <div className="bg-zinc-900/20 border border-zinc-800/50 p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-2xl">
             <div className="space-y-8">
               
-              {/* Email Section */}
               <div className="space-y-3">
                 <label className="block text-[9px] md:text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] px-1">
                   Login Email
@@ -92,7 +116,6 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Display Name Section */}
               <div className="space-y-3">
                 <label className="block text-[9px] md:text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] px-1">
                   Shark Alias (Display Name)
@@ -108,7 +131,25 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Action Button */}
+              {/* NEW: HOST-ONLY JACKPOT SECTION */}
+              {role === 'host' && (
+                <div className="space-y-3 pt-4 border-t border-zinc-800/50">
+                  <label className="block text-[9px] md:text-[10px] font-black text-yellow-500 uppercase tracking-[0.2em] px-1">
+                    House Jackpot Amount
+                  </label>
+                  <div className="relative flex items-center group">
+                    <Trophy size={18} className="absolute left-5 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
+                    <input 
+                      type="number"
+                      className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-yellow-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800 text-yellow-500"
+                      placeholder="0.00"
+                      value={jackpot}
+                      onChange={(e) => setJackpot(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="pt-4">
                 <button 
                   onClick={updateProfile}
@@ -130,7 +171,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Footer / Danger Zone */}
         <footer className="mt-12 mb-4">
           <button 
             onClick={handleSignOut}
