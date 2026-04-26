@@ -262,7 +262,7 @@ export default function DashboardPage() {
             
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
-              <p className={`text-5xl md:text-7xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <p className={`text-5xl md:text-4xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 ${stats.total.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50 flex justify-between items-center">
@@ -276,7 +276,7 @@ export default function DashboardPage() {
               <p className="text-yellow-500 text-sm font-bold uppercase tracking-widest flex items-center gap-2">
                 <Trophy size={16} /> Current Jackpot
               </p>
-              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter text-white">
+              <p className="text-5xl md:text-4xl font-black mt-2 tracking-tighter text-white">
                 ${globalJackpot.toFixed(2)}
               </p>
               <div className="mt-4 pt-4 border-t border-zinc-800/50">
@@ -286,11 +286,11 @@ export default function DashboardPage() {
 
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Win Rate</p>
-              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
+              <p className="text-5xl md:text-4xl font-black mt-2 tracking-tighter text-yellow-500">{stats.winRate}%</p>
             </div>
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Sessions</p>
-              <p className="text-5xl md:text-7xl font-black mt-2 tracking-tighter">{stats.count}</p>
+              <p className="text-5xl md:text-4xl font-black mt-2 tracking-tighter">{stats.count}</p>
             </div>
           </div>
 
