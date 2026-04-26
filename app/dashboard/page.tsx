@@ -199,7 +199,7 @@ export default function DashboardPage() {
                       itemStyle={{ fontWeight: '900' }}
                       separator=""
                       labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
-                      formatter={(value: any, name: string, props: any) => {
+                      formatter={(value: any, name: any, props: any) => {
   const { bankroll, sessionNet } = props.payload;
   
   // Create the content as a single JSX element
@@ -221,8 +221,8 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Return the content as the "value" and an empty string as the "label"
-  return [content, ""];
+  // Return the content as the first element and name as the second
+  return [content, name];
 }}
                     />
                     <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
