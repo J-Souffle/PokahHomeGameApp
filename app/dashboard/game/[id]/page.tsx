@@ -20,7 +20,6 @@ export default function PlayerLiveView() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // Fetch session and results in parallel for speed
     const [sessRes, resultsRes] = await Promise.all([
       supabase.from('poker_sessions').select('*').eq('id', sessionId).single(),
       supabase.from('player_results').select('*').eq('session_id', sessionId)
@@ -78,18 +77,16 @@ export default function PlayerLiveView() {
     }
   }, [sessionId, supabase])
 
-  // NIT LOGIC: Check if I am the last one holding a token
+  // UPDATED NIT LOGIC: Check for 'active' status to prevent lobby alerts
   const activeNits = allPlayers.filter(p => p.has_nit_token);
-  const isLastNit = activeNits.length === 1 && myResult?.has_nit_token;
+  const isLastNit = session?.status === 'active' && activeNits.length === 1 && myResult?.has_nit_token;
 
-  // Find the overall session loser for the settlement screen
   const ultimateNitPlayer = useMemo(() => {
     if (allPlayers.length === 0) return null;
     const topNit = [...allPlayers].sort((a, b) => (b.nit_count || 0) - (a.nit_count || 0))[0];
     return (topNit?.nit_count || 0) > 0 ? topNit : null;
   }, [allPlayers]);
 
-  // Haptic feedback for the Last Nit
   useEffect(() => {
     if (isLastNit && typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate([200, 100, 200]);
@@ -101,26 +98,30 @@ export default function PlayerLiveView() {
     const ultimateNit = activeNits[0];
 
     try {
-      // OPTIMISTIC UPDATE: Clear UI immediately
-      setAllPlayers(prev => prev.map(p => ({ ...p, has_nit_token: true })));
+      // 1. OPTIMISTIC UPDATE: Manually set all local tokens to false 
+      // This forces activeNits.length to 0 immediately so the UI hides the alert.
+      setAllPlayers(prev => prev.map(p => ({ ...p, has_nit_token: false })));
 
-      // 1. Increment the nit_count
+      // 2. Increment the nit_count for the loser
       await supabase
         .from('player_results')
         .update({ nit_count: (ultimateNit.nit_count || 0) + 1 })
         .eq('id', ultimateNit.id);
 
-      // 2. Reset ALL tokens
+      // 3. Reset ALL tokens in DB (Set to false so they are 'used')
       const { error } = await supabase
         .from('player_results')
-        .update({ has_nit_token: true })
+        .update({ has_nit_token: false })
         .eq('session_id', sessionId);
 
       if (error) throw error;
       
+      // 4. Final sync to get the new nit_counts
       await fetchData(); 
     } catch (err) {
       console.error("Penalty error:", err);
+      // Fallback: refresh data if the DB call fails
+      await fetchData();
     }
   }
 
@@ -150,6 +151,7 @@ export default function PlayerLiveView() {
 
   const handleButtonClick = async () => {
     if (!myResult || session?.status !== 'active') return
+
     const newCount = localClicks + 1
     setLocalClicks(newCount)
     
@@ -255,7 +257,6 @@ export default function PlayerLiveView() {
             </div>
           </div>
 
-          {/* ULTIMATE NIT AWARD */}
           {ultimateNitPlayer && (
             <div className="bg-red-500/10 border border-red-500/50 p-6 rounded-[2.5rem] flex items-center justify-between overflow-hidden relative">
               <div className="relative z-10">
@@ -338,44 +339,43 @@ export default function PlayerLiveView() {
       ) : (
         <div className="max-w-md mx-auto space-y-4">
           
-          {/* NIT PENALTY ALERT */}
-          {/* NIT PENALTY ALERT */}
-{isLastNit && (
-  <div className="bg-red-600 text-white p-6 rounded-[2.5rem] shadow-[0_0_50px_rgba(220,38,38,0.5)] animate-in zoom-in duration-300 border-4 border-white/20 mb-6">
-    <div className="flex flex-col items-center text-center">
-      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 animate-pulse">
-        <AlertTriangle size={32} />
-      </div>
-      <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-1">
-        ⚠️ YOU ARE THE ULTIMATE NIT
-      </p>
-      <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none mb-4">
-        PAY EVERYONE 1 BB
-      </h2>
-      <button 
-        onClick={handleConfirmNitPenalty} 
-        className="w-full bg-white text-red-600 py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all hover:bg-zinc-100"
-      >
-        Penalty Paid — Reset Tokens
-      </button>
-    </div>
-  </div>
-)}
+          {/* UPDATED NIT PENALTY ALERT WITH STATUS CHECK */}
+          {isLastNit && (
+            <div className="bg-red-600 text-white p-6 rounded-[2.5rem] shadow-[0_0_50px_rgba(220,38,38,0.5)] animate-in zoom-in duration-300 border-4 border-white/20 mb-6">
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                  <AlertTriangle size={32} />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-1">
+                  ⚠️ YOU ARE THE ULTIMATE NIT
+                </p>
+                <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none mb-4">
+                  PAY EVERYONE 1 BB
+                </h2>
+                <button 
+                  onClick={handleConfirmNitPenalty} 
+                  className="w-full bg-white text-red-600 py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all hover:bg-zinc-100"
+                >
+                  Penalty Paid — Reset Tokens
+                </button>
+              </div>
+            </div>
+          )}
 
-{/* OPTIONAL: Show a passive warning to other players so they know who to collect from */}
-{!isLastNit && activeNits.length === 1 && (
-  <div className="bg-zinc-900 border border-red-500/30 p-4 rounded-[2rem] mb-6 flex items-center gap-4">
-    <div className="bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center">
-      <AlertTriangle size={20} />
-    </div>
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nit Alert</p>
-      <p className="text-sm font-bold uppercase italic">
-        Collect 1 BB from <span className="text-red-500">{activeNits[0]?.display_name}</span>
-      </p>
-    </div>
-  </div>
-)}
+          {/* UPDATED PASSIVE WARNING WITH STATUS CHECK */}
+          {session?.status === 'active' && !isLastNit && activeNits.length === 1 && (
+            <div className="bg-zinc-900 border border-red-500/30 p-4 rounded-[2rem] mb-6 flex items-center gap-4">
+              <div className="bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nit Alert</p>
+                <p className="text-sm font-bold uppercase italic">
+                  Collect 1 BB from <span className="text-red-500">{activeNits[0]?.display_name}</span>
+                </p>
+              </div>
+            </div>
+          )}
 
           {hasBounty && (
             <div className={`p-6 rounded-[2.5rem] border-2 flex items-center justify-between overflow-hidden relative shadow-2xl transition-all duration-500 ${
@@ -395,10 +395,28 @@ export default function PlayerLiveView() {
           )}
 
           <div className="relative group">
-            <button onClick={handleButtonClick} className="w-full aspect-square bg-zinc-900 border-8 border-zinc-800 rounded-[3rem] flex flex-col items-center justify-center transition-all active:scale-95 active:bg-zinc-800 active:border-zinc-700 shadow-2xl relative overflow-hidden">
-              <MousePointer2 size={48} className="text-zinc-700 mb-4 group-active:text-yellow-500 transition-colors" />
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-1">Session Taps</p>
-              <p className="text-6xl font-black italic tracking-tighter text-white group-active:scale-110 transition-transform">{localClicks}</p>
+            <button 
+              onClick={handleButtonClick} 
+              disabled={session?.status !== 'active'}
+              className={`w-full aspect-square border-8 rounded-[3rem] flex flex-col items-center justify-center transition-all relative overflow-hidden shadow-2xl
+                ${session?.status === 'active' 
+                  ? 'bg-zinc-900 border-zinc-800 active:scale-95 active:bg-zinc-800 active:border-zinc-700' 
+                  : 'bg-zinc-950 border-zinc-900 opacity-60 cursor-not-allowed'
+                }`}
+            >
+              {session?.status === 'active' ? (
+                <>
+                  <MousePointer2 size={48} className="text-zinc-700 mb-4 group-active:text-yellow-500 transition-colors" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-1">Session Taps</p>
+                  <p className="text-6xl font-black italic tracking-tighter text-white group-active:scale-110 transition-transform">{localClicks}</p>
+                </>
+              ) : (
+                <>
+                  <Zap size={48} className="text-zinc-800 mb-4 animate-pulse" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-600">Engine Cold</p>
+                  <p className="text-xl font-black italic text-zinc-700">WAITING FOR HOST</p>
+                </>
+              )}
             </button>
           </div>
 
