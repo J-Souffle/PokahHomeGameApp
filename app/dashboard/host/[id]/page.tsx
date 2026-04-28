@@ -112,7 +112,7 @@ export default function HostLobby() {
         const { data: profileData, error: profError } = await supabase
           .from('profiles')
           .select('id, full_name, display_name')
-          .in(userIds.length > 0 ? 'id' : ['none'], userIds)
+          .in('id', userIds.length > 0 ? userIds : ['none'])
 
         if (profError) console.error("Profile fetch error:", profError.message)
 
