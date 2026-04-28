@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Target, MousePointer2, Trophy, Crosshair, Zap, UserCheck } from 'lucide-react'
+import { Target, MousePointer2, Trophy, Crosshair, Zap, UserCheck, Plus, Minus, Coins } from 'lucide-react'
 
 export default function HostLobby() {
   const params = useParams()
@@ -15,6 +15,20 @@ export default function HostLobby() {
   const [sessionData, setSessionData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [finalChips, setFinalChips] = useState<{[key: string]: number}>({})
+  const [globalJackpot, setGlobalJackpot] = useState(0)
+
+  // UPDATED: Precision-safe jackpot updates with cents support
+  const updateJackpot = async (amount: number) => {
+    const newAmount = Math.max(0, parseFloat((globalJackpot + amount).toFixed(2)))
+    
+    // Optimistic update for immediate feedback
+    setGlobalJackpot(newAmount)
+
+    await supabase
+      .from('global_settings')
+      .update({ jackpot_amount: newAmount })
+      .eq('id', 'poker_config')
+  }
 
   // NIT RULE: Mark player as having played a hand
   const markPlayed = async (playerId: string) => {
@@ -31,13 +45,11 @@ export default function HostLobby() {
     const loser = activeNits[0];
     
     try {
-      // 1. Increment the count for the loser
       await supabase
         .from('player_results')
         .update({ nit_count: (loser.nit_count || 0) + 1 })
         .eq('id', loser.id);
 
-      // 2. Reset everyone's token to true for the next round
       const { error } = await supabase
         .from('player_results')
         .update({ has_nit_token: true })
@@ -87,27 +99,28 @@ export default function HostLobby() {
       if (sError) throw sError
       if (session) setSessionData(session)
 
-      const { data: results, error: pError } = await supabase
-        .from('player_results')
-        .select('*')
-        .eq('session_id', sessionId)
+      const [resultsRes, jackpotRes] = await Promise.all([
+        supabase.from('player_results').select('*').eq('session_id', sessionId),
+        supabase.from('global_settings').select('jackpot_amount').eq('id', 'poker_config').single()
+      ])
       
-      if (pError) throw pError
+      if (resultsRes.error) throw resultsRes.error
+      if (jackpotRes.data) setGlobalJackpot(jackpotRes.data.jackpot_amount || 0)
 
-      if (results && results.length > 0) {
-        const userIds = results.map(r => r.user_id).filter(Boolean)
+      if (resultsRes.data && resultsRes.data.length > 0) {
+        const userIds = resultsRes.data.map(r => r.user_id).filter(Boolean)
         const { data: profileData, error: profError } = await supabase
           .from('profiles')
           .select('id, full_name, display_name')
-          .in('id', userIds)
+          .in(userIds.length > 0 ? 'id' : ['none'], userIds)
 
         if (profError) console.error("Profile fetch error:", profError.message)
 
-        const combined = results.map(r => {
+        const combined = resultsRes.data.map(r => {
           const profile = profileData?.find(p => p.id === r.user_id);
           return {
             ...r,
-            display_name: profile?.display_name || profile?.full_name || `Player ${r.user_id.slice(0,4)}`
+            display_name: profile?.display_name || profile?.full_name || `Player ${r.user_id?.slice(0,4)}`
           }
         })
         setPlayers(combined)
@@ -139,13 +152,22 @@ export default function HostLobby() {
         table: 'poker_sessions', 
         filter: `id=eq.${sessionId}`
       }, () => getData())
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'global_settings'
+      }, (payload) => {
+        // Specifically update jackpot state if it changed in DB
+        if (payload.new && payload.new.jackpot_amount !== undefined) {
+          setGlobalJackpot(payload.new.jackpot_amount)
+        }
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [sessionId, getData, supabase])
 
   const handleStartGame = async () => {
-    // START ENGINE: Set session to active AND reset all nit tokens to true
     const sessionUpdate = supabase
       .from('poker_sessions')
       .update({ status: 'active' })
@@ -292,6 +314,46 @@ export default function HostLobby() {
           </div>
         </div>
 
+        {/* JACKPOT CONTROL CARD */}
+        <div className="mb-8 p-8 bg-zinc-900 border border-yellow-500/30 rounded-[3rem] shadow-[0_0_50px_rgba(234,179,8,0.05)]">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center text-black shadow-[0_0_30px_rgba(234,179,8,0.4)]">
+                <Trophy size={32} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-yellow-500/60 mb-1">Global Jackpot Pool</p>
+                <h3 className="text-5xl font-black italic uppercase tracking-tighter text-white font-mono">
+                  ${globalJackpot.toFixed(2)}
+                </h3>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-4 w-full md:w-auto">
+              {/* Main Controls */}
+              <div className="flex items-center justify-center gap-2">
+                <button onClick={() => updateJackpot(-5)} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl hover:bg-red-500/10 hover:border-red-500/50 transition-all text-zinc-500 hover:text-red-500">
+                  <Minus size={20} />
+                </button>
+                <button onClick={() => updateJackpot(-1)} className="px-6 py-3 bg-zinc-950 border border-zinc-800 rounded-2xl text-[10px] font-black hover:text-red-500 transition-all">-$1</button>
+                <button onClick={() => updateJackpot(1)} className="px-6 py-3 bg-zinc-950 border border-zinc-800 rounded-2xl text-[10px] font-black hover:text-green-500 transition-all">+$1</button>
+                <button onClick={() => updateJackpot(5)} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl hover:bg-green-500/10 hover:border-green-500/50 transition-all text-zinc-500 hover:text-green-500">
+                  <Plus size={20} />
+                </button>
+              </div>
+
+              {/* Cent Controls Row */}
+              <div className="flex items-center justify-center gap-2 border-t border-zinc-800/50 pt-4">
+                <button onClick={() => updateJackpot(-0.25)} className="px-3 py-2 bg-zinc-950/50 border border-zinc-800 rounded-xl text-[9px] font-black text-zinc-500 hover:text-red-400">-.25¢</button>
+                <button onClick={() => updateJackpot(-0.01)} className="px-3 py-2 bg-zinc-950/50 border border-zinc-800 rounded-xl text-[9px] font-black text-zinc-500 hover:text-red-400">-.01¢</button>
+                <div className="mx-2 text-zinc-700"><Coins size={14}/></div>
+                <button onClick={() => updateJackpot(0.01)} className="px-3 py-2 bg-zinc-950/50 border border-zinc-800 rounded-xl text-[9px] font-black text-zinc-500 hover:text-green-400">+.01¢</button>
+                <button onClick={() => updateJackpot(0.25)} className="px-3 py-2 bg-zinc-950/50 border border-zinc-800 rounded-xl text-[9px] font-black text-zinc-500 hover:text-green-400">+.25¢</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* NIT TRACKER (ONLY WHILE ACTIVE) */}
         {sessionData?.status === 'active' && (
           <div className="mb-8 p-6 bg-zinc-900 border border-zinc-800 rounded-[2.5rem]">
@@ -334,7 +396,6 @@ export default function HostLobby() {
           </div>
         )}
 
-        {/* ... remaining JSX ... */}
         {sessionData?.bounty_target_id && sessionData?.status !== 'completed' && (
           <div className="mb-8 p-6 bg-yellow-500/5 border border-yellow-500/20 rounded-[2rem] flex items-center justify-between">
             <div className="flex items-center gap-4">

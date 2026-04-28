@@ -7,7 +7,10 @@ import { ChevronLeft, Trophy, DollarSign, Users, Share2, CheckCircle2, Target, M
 export default function PlayerLiveView() {
   const { id: sessionId } = useParams()
   const router = useRouter()
-  const supabase = createClient()
+  
+  // FIX 1: Memoize supabase to prevent function identity changes
+  const supabase = useMemo(() => createClient(), [])
+  
   const [session, setSession] = useState<any>(null)
   const [myResult, setMyResult] = useState<any>(null)
   const [leaderboard, setLeaderboard] = useState<any[]>([])
@@ -15,69 +18,109 @@ export default function PlayerLiveView() {
   const [stats, setStats] = useState({ totalPlayers: 0, totalRebuys: 0 })
   const [showAlert, setShowAlert] = useState(false)
   const [localClicks, setLocalClicks] = useState(0)
+  const [globalJackpot, setGlobalJackpot] = useState(0)
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const [sessRes, resultsRes] = await Promise.all([
-      supabase.from('poker_sessions').select('*').eq('id', sessionId).single(),
-      supabase.from('player_results').select('*').eq('session_id', sessionId)
-    ])
+    try {
+      const [sessRes, resultsRes, jackpotRes] = await Promise.all([
+        supabase.from('poker_sessions').select('*').eq('id', sessionId).single(),
+        supabase.from('player_results').select('*').eq('session_id', sessionId),
+        supabase.from('global_settings').select('jackpot_amount').eq('id', 'poker_config').single()
+      ])
 
-    if (sessRes.data) setSession(sessRes.data)
+      if (sessRes.data) setSession(sessRes.data)
+      if (jackpotRes.data) setGlobalJackpot(jackpotRes.data.jackpot_amount || 0)
 
-    if (resultsRes.data) {
-      const allResults = resultsRes.data
-      const me = allResults.find(r => r.user_id === user.id)
-      const userIds = allResults.map(r => r.user_id)
-      
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, display_name, full_name') 
-        .in('id', userIds)
-
-      const playersWithNames = allResults.map(r => {
-        const p = profiles?.find(prof => prof.id === r.user_id)
-        return {
-          ...r,
-          display_name: p?.display_name || p?.full_name || `Player ${r.user_id.substring(0, 4)}`
-        }
-      })
-
-      setAllPlayers(playersWithNames)
-      
-      const myProfile = profiles?.find(p => p.id === user.id)
-      const myDisplayName = myProfile?.display_name || myProfile?.full_name || `Player ${user.id.substring(0, 4)}`
-      
-      setMyResult(me ? { ...me, display_name: myDisplayName } : null)
-      if (me) setLocalClicks(me.click_count || 0)
-      
-      setStats({
-        totalPlayers: allResults.length,
-        totalRebuys: allResults.reduce((acc, r) => acc + (r.rebuys || 0), 0)
-      })
-
-      if (sessRes.data?.status === 'completed') {
-        const ranked = playersWithNames.map(r => {
-          const buyInTotal = (1 + (r.rebuys || 0)) * (sessRes.data?.buy_in || 0)
-          return {
-            id: r.user_id,
-            name: r.display_name,
-            profit: (r.final_chips || 0) + (r.bounty_earned || 0) - buyInTotal,
-            clicks: r.click_count || 0,
-            bounties: r.bounty_earned || 0,
-            isNit: r.has_nit_token,
-            nit_count: r.nit_count || 0
-          }
-        }).sort((a, b) => b.profit - a.profit)
+      if (resultsRes.data && resultsRes.data.length > 0) {
+        const allResults = resultsRes.data
+        const userIds = allResults.map(r => r.user_id).filter(Boolean)
         
-        setLeaderboard(ranked)
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, full_name') 
+          .in('id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
+
+        const playersWithNames = allResults.map(r => {
+          const p = profiles?.find(prof => prof.id === r.user_id)
+          return {
+            ...r,
+            display_name: p?.display_name || p?.full_name || `Player ${r.user_id.substring(0, 4)}`
+          }
+        })
+
+        setAllPlayers(playersWithNames)
+        const me = playersWithNames.find(r => r.user_id === user.id)
+        setMyResult(me || null)
+        
+        setStats({
+          totalPlayers: allResults.length,
+          totalRebuys: allResults.reduce((acc, r) => acc + (r.rebuys || 0), 0)
+        })
+
+        if (sessRes.data?.status === 'completed') {
+          const ranked = playersWithNames.map(r => {
+            const buyInTotal = (1 + (r.rebuys || 0)) * (sessRes.data?.buy_in || 0)
+            return {
+              id: r.user_id,
+              name: r.display_name,
+              profit: (r.final_chips || 0) + (r.bounty_earned || 0) - buyInTotal,
+              clicks: r.click_count || 0,
+              bounties: r.bounty_earned || 0,
+              isNit: r.has_nit_token,
+              nit_count: r.nit_count || 0
+            }
+          }).sort((a, b) => b.profit - a.profit)
+          setLeaderboard(ranked)
+        }
       }
+    } catch (err) {
+      console.error("Fetch Error:", err)
     }
   }, [sessionId, supabase])
 
-  // UPDATED NIT LOGIC: Check for 'active' status to prevent lobby alerts
+  // FIX 2: Separate Initial Load from Real-time to prevent "Taps" state resetting
+  useEffect(() => {
+    if (!sessionId) return
+    fetchData()
+
+    const channel = supabase
+      .channel(`player-sync-${sessionId}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'player_results', 
+        filter: `session_id=eq.${sessionId}` 
+      }, () => fetchData())
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'poker_sessions', 
+        filter: `id=eq.${sessionId}` 
+      }, () => fetchData())
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'global_settings' 
+      }, (payload) => {
+        if (payload.new && payload.new.jackpot_amount !== undefined) {
+          setGlobalJackpot(payload.new.jackpot_amount)
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [sessionId, fetchData, supabase])
+
+  // Sync local click state only on first load of myResult
+  useEffect(() => {
+    if (myResult && localClicks === 0) {
+      setLocalClicks(myResult.click_count || 0)
+    }
+  }, [myResult])
+
   const activeNits = allPlayers.filter(p => p.has_nit_token);
   const isLastNit = session?.status === 'active' && activeNits.length === 1 && myResult?.has_nit_token;
 
@@ -96,51 +139,19 @@ export default function PlayerLiveView() {
   const handleConfirmNitPenalty = async () => {
     if (activeNits.length !== 1) return;
     const ultimateNit = activeNits[0];
-
     try {
-      // 1. OPTIMISTIC UPDATE: Manually set all local tokens to false 
-      // This forces activeNits.length to 0 immediately so the UI hides the alert.
-      setAllPlayers(prev => prev.map(p => ({ ...p, has_nit_token: false })));
-
-      // 2. Increment the nit_count for the loser
-      await supabase
-        .from('player_results')
-        .update({ nit_count: (ultimateNit.nit_count || 0) + 1 })
-        .eq('id', ultimateNit.id);
-
-      // 3. Reset ALL tokens in DB (Set to false so they are 'used')
-      const { error } = await supabase
-        .from('player_results')
-        .update({ has_nit_token: false })
-        .eq('session_id', sessionId);
-
-      if (error) throw error;
-      
-      // 4. Final sync to get the new nit_counts
-      await fetchData(); 
+      await supabase.from('player_results').update({ nit_count: (ultimateNit.nit_count || 0) + 1 }).eq('id', ultimateNit.id);
+      await supabase.from('player_results').update({ has_nit_token: false }).eq('session_id', sessionId);
+      fetchData(); 
     } catch (err) {
       console.error("Penalty error:", err);
-      // Fallback: refresh data if the DB call fails
-      await fetchData();
     }
   }
-
-  useEffect(() => {
-    if (!sessionId) return
-    fetchData()
-    const channel = supabase
-      .channel(`player-sync-${sessionId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_results', filter: `session_id=eq.${sessionId}` }, fetchData)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'poker_sessions', filter: `id=eq.${sessionId}` }, fetchData)
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [sessionId, fetchData, supabase])
 
   useEffect(() => {
     if (session?.last_rebuy_time) {
       const rebuyTime = new Date(session.last_rebuy_time).getTime()
       const now = new Date().getTime()
-      
       if (now - rebuyTime < 10000) {
         setShowAlert(true)
         const timer = setTimeout(() => setShowAlert(false), 5000)
@@ -151,37 +162,13 @@ export default function PlayerLiveView() {
 
   const handleButtonClick = async () => {
     if (!myResult || session?.status !== 'active') return
-
     const newCount = localClicks + 1
     setLocalClicks(newCount)
-    
-    await supabase
-      .from('player_results')
-      .update({ click_count: newCount })
-      .eq('id', myResult.id)
+    await supabase.from('player_results').update({ click_count: newCount }).eq('id', myResult.id)
   }
 
   const handleMarkAsPaid = async () => {
     if (myResult) await supabase.from('player_results').update({ has_paid: true }).eq('id', myResult.id)
-  }
-
-  const handleShare = async () => {
-    const myProfitVal = (myResult.final_chips || 0) + (myResult.bounty_earned || 0) - ((1 + myResult.rebuys) * session.buy_in)
-    const text = `🃏 Poker Session: ${session?.game_name || 'The High Table'}\n` +
-      `👤 Player: ${myResult.display_name}\n` +
-      `💰 Cashed Out: $${myResult.final_chips || 0}\n` +
-      (myResult.bounty_earned > 0 ? `🎯 Bounties: $${myResult.bounty_earned}\n` : '') +
-      `📈 Net: ${myProfitVal >= 0 ? '+' : ''}$${myProfitVal}\n` +
-      `🖱️ Total Clicks: ${localClicks}`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Poker Results', text: text, url: window.location.href });
-      } catch (err) { console.log('Share canceled'); }
-    } else {
-      navigator.clipboard.writeText(`${text}\n${window.location.href}`);
-      alert('Results copied to clipboard!');
-    }
   }
 
   const potSize = useMemo(() => {
@@ -206,7 +193,6 @@ export default function PlayerLiveView() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-6 pb-20">
-      
       {showAlert && (
         <div className="fixed inset-x-0 top-10 z-[100] px-6 pointer-events-none animate-in fade-in zoom-in slide-in-from-top-10 duration-500">
           <div className="bg-white text-black p-4 rounded-[2rem] shadow-[0_0_50px_rgba(255,255,255,0.3)] flex items-center justify-between border-4 border-yellow-500">
@@ -236,6 +222,10 @@ export default function PlayerLiveView() {
 
       {session?.status === 'completed' ? (
         <div className="space-y-6 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="bg-gradient-to-br from-yellow-600/20 to-amber-900/30 border border-yellow-500/40 p-6 rounded-[2.5rem] text-center shadow-[0_0_40px_rgba(234,179,8,0.15)] relative overflow-hidden">
+             <p className="text-yellow-500 text-[10px] font-black uppercase tracking-[0.4em] mb-1">✨ Final Jackpot Pool ✨</p>
+             <p className="text-5xl font-black tracking-tighter text-white font-mono">${globalJackpot.toFixed(2)}</p>
+          </div>
           
           <div className={`p-6 rounded-[2.5rem] border transition-all duration-500 ${
             myResult.has_paid ? 'bg-green-500/5 border-green-500/20' : 'bg-yellow-500/5 border-yellow-500/20 animate-pulse'
@@ -338,8 +328,18 @@ export default function PlayerLiveView() {
         </div>
       ) : (
         <div className="max-w-md mx-auto space-y-4">
+          <div className="bg-gradient-to-br from-yellow-600/20 to-amber-900/30 border border-yellow-500/40 p-6 rounded-[2.5rem] text-center shadow-[0_0_40px_rgba(234,179,8,0.15)] mb-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <Trophy size={60} className="text-yellow-500 rotate-12" />
+            </div>
+            <p className="text-yellow-500 text-[10px] font-black uppercase tracking-[0.4em] mb-1 relative z-10">
+              ✨ Global Jackpot Pool ✨
+            </p>
+            <p className="text-5xl font-black tracking-tighter text-white font-mono relative z-10">
+              ${globalJackpot.toFixed(2)}
+            </p>
+          </div>
           
-          {/* UPDATED NIT PENALTY ALERT WITH STATUS CHECK */}
           {isLastNit && (
             <div className="bg-red-600 text-white p-6 rounded-[2.5rem] shadow-[0_0_50px_rgba(220,38,38,0.5)] animate-in zoom-in duration-300 border-4 border-white/20 mb-6">
               <div className="flex flex-col items-center text-center">
@@ -362,7 +362,6 @@ export default function PlayerLiveView() {
             </div>
           )}
 
-          {/* UPDATED PASSIVE WARNING WITH STATUS CHECK */}
           {session?.status === 'active' && !isLastNit && activeNits.length === 1 && (
             <div className="bg-zinc-900 border border-red-500/30 p-4 rounded-[2rem] mb-6 flex items-center gap-4">
               <div className="bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center">
