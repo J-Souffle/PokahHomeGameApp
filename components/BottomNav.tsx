@@ -8,7 +8,7 @@ export default function BottomNav() {
   
   const navItems = [
     { name: 'Join', path: '/dashboard/join', icon: '♣️' },
-    { name: 'Live', path: '/dashboard/live', icon: '📊' },
+    { name: 'Leaderboard', path: '/dashboard/leaderboard', icon: '📊' },
     { name: 'Profile', path: '/dashboard', icon: '👤' },
   ]
 
