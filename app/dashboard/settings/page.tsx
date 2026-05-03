@@ -2,14 +2,16 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/client'
 import Link from 'next/link'
-import { ChevronLeft, User, LogOut, ShieldCheck, Trophy } from 'lucide-react'
+import { ChevronLeft, User, LogOut, ShieldCheck, Trophy, Award } from 'lucide-react'
 
 export default function SettingsPage() {
   const supabase = createClient()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState('') // Added to check for host
-  const [jackpot, setJackpot] = useState('') // New state for Jackpot
+  const [role, setRole] = useState('') 
+  const [jackpot, setJackpot] = useState('')
+  const [jackpotWinner, setJackpotWinner] = useState('')
+  const [highestEarned, setHighestEarned] = useState('') // New state for Record Win
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -19,7 +21,6 @@ export default function SettingsPage() {
       if (user) {
         setEmail(user.email || '')
         
-        // Fetch Profile for Display Name and Role
         const { data: profileData } = await supabase
           .from('profiles')
           .select('display_name, full_name, role')
@@ -30,14 +31,17 @@ export default function SettingsPage() {
           setName(profileData.display_name || profileData.full_name || '')
           setRole(profileData.role || '')
           
-          // If they are a host, fetch the current global jackpot
           if (profileData.role === 'host') {
             const { data: settings } = await supabase
               .from('global_settings')
-              .select('jackpot_amount')
+              .select('jackpot_amount, jackpot_winner, record_win_amount')
               .eq('id', 'poker_config')
               .single()
-            if (settings) setJackpot(settings.jackpot_amount.toString())
+            if (settings) {
+              setJackpot(settings.jackpot_amount?.toString() || '')
+              setJackpotWinner(settings.jackpot_winner || '')
+              setHighestEarned(settings.record_win_amount?.toString() || '')
+            }
           }
         }
       }
@@ -46,36 +50,45 @@ export default function SettingsPage() {
   }, [supabase])
 
   const updateProfile = async () => {
-    setLoading(true)
-    setMessage('')
-    const { data: { user } } = await supabase.auth.getUser()
+  setLoading(true)
+  setMessage('')
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (user) {
+    // 1. Update Profile Alias
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ display_name: name })
+      .eq('id', user.id)
     
-    if (user) {
-      // 1. Update Profile Alias
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ display_name: name })
-        .eq('id', user.id)
-      
-      // 2. Update Global Jackpot (Only if Host)
-      let jackpotError = null
-      if (role === 'host') {
-        const { error } = await supabase
-          .from('global_settings')
-          .update({ jackpot_amount: parseFloat(jackpot) || 0 })
-          .eq('id', 'poker_config')
-        jackpotError = error
-      }
-      
-      if (profileError || jackpotError) {
-        setMessage('Error updating records.')
-      } else {
-        setMessage('Identity & Settings Updated.')
-        setTimeout(() => setMessage(''), 3000)
-      }
+    if (profileError) console.error("Profile Update Error:", profileError)
+
+    // 2. Update Global Settings
+   // 2. Update Global Settings
+let settingsError = null
+if (role === 'host') {
+  const { error } = await supabase
+    .from('global_settings')
+    .upsert({ 
+      id: 'poker_config', // Crucial for upsert to know which row to target
+      jackpot_amount: parseFloat(jackpot) || 0,
+      jackpot_winner: jackpotWinner,
+      record_win_amount: parseFloat(highestEarned) || 0 
+    })
+  
+  settingsError = error
+  if (settingsError) console.error("Settings Update Error:", settingsError)
+}
+    
+    if (profileError || settingsError) {
+      setMessage('Error updating records. Check console.')
+    } else {
+      setMessage('Identity & Settings Updated.')
+      setTimeout(() => setMessage(''), 3000)
     }
-    setLoading(false)
   }
+  setLoading(false)
+}
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -107,9 +120,7 @@ export default function SettingsPage() {
             <div className="space-y-8">
               
               <div className="space-y-3">
-                <label className="block text-[9px] md:text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] px-1">
-                  Login Email
-                </label>
+                <label className="block text-[9px] md:text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] px-1">Login Email</label>
                 <div className="w-full bg-zinc-950/50 border border-zinc-900 p-4 md:p-5 rounded-2xl text-zinc-500 font-mono text-xs md:text-sm cursor-not-allowed flex items-center gap-3 overflow-hidden">
                   <ShieldCheck size={16} className="shrink-0" />
                   <span className="truncate">{email}</span>
@@ -117,11 +128,9 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-3">
-                <label className="block text-[9px] md:text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] px-1">
-                  Agent Alias (Display Name)
-                </label>
+                <label className="block text-[9px] md:text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] px-1">Agent Alias (Display Name)</label>
                 <div className="relative flex items-center group">
-                  <User size={18} className="absolute left-5 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
+                  <User size={18} className="absolute left-5 p-2 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
                   <input 
                     className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-yellow-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800"
                     placeholder="ENTER ALIAS..."
@@ -131,21 +140,51 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* NEW: HOST-ONLY JACKPOT SECTION */}
+              {/* HOST-ONLY SECTION */}
               {role === 'host' && (
-                <div className="space-y-3 pt-4 border-t border-zinc-800/50">
-                  <label className="block text-[9px] md:text-[10px] font-black text-yellow-500 uppercase tracking-[0.2em] px-1">
-                    House Jackpot Amount
-                  </label>
-                  <div className="relative flex items-center group">
-                    <Trophy size={18} className="absolute left-5 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
-                    <input 
-                      type="number"
-                      className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-yellow-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800 text-yellow-500"
-                      placeholder="0.00"
-                      value={jackpot}
-                      onChange={(e) => setJackpot(e.target.value)}
-                    />
+                <div className="space-y-6 pt-4 border-t border-zinc-800/50">
+                  {/* Jackpot Name */}
+                  <div className="space-y-3">
+                    <label className="block text-[9px] md:text-[10px] font-black text-yellow-500 uppercase tracking-[0.2em] px-1">Jackpot Winner Name</label>
+                    <div className="relative flex items-center group">
+                      <User size={18} className="absolute left-5 p-2 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
+                      <input 
+                        className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-yellow-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800 text-yellow-500"
+                        placeholder="WINNER NAME..."
+                        value={jackpotWinner}
+                        onChange={(e) => setJackpotWinner(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* House Jackpot Amount */}
+                  <div className="space-y-3">
+                    <label className="block text-[9px] md:text-[10px] font-black text-yellow-500 uppercase tracking-[0.2em] px-1">House Jackpot Amount</label>
+                    <div className="relative flex items-center group">
+                      <Trophy size={18} className="absolute left-5 p-2 text-zinc-700 group-focus-within:text-yellow-500 transition-colors" />
+                      <input 
+                        type="number"
+                        className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-yellow-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800 text-yellow-500"
+                        placeholder="0.00"
+                        value={jackpot}
+                        onChange={(e) => setJackpot(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Record Win Amount */}
+                  <div className="space-y-3">
+                    <label className="block text-[9px] md:text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] px-1">Record High Score (Leaderboard)</label>
+                    <div className="relative flex items-center group">
+                      <Award size={18} className="absolute left-5 p-2 text-zinc-700 group-focus-within:text-emerald-500 transition-colors" />
+                      <input 
+                        type="number"
+                        className="w-full bg-zinc-950 border border-zinc-800 p-4 md:p-5 pl-14 rounded-2xl focus:outline-none focus:border-emerald-500 transition-all font-black text-lg md:text-xl uppercase italic tracking-tight placeholder:text-zinc-800 text-emerald-500"
+                        placeholder="0.00"
+                        value={highestEarned}
+                        onChange={(e) => setHighestEarned(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
