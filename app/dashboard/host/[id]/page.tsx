@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Target, MousePointer2, Trophy, Crosshair, Zap, UserCheck, Plus, Minus, Coins } from 'lucide-react'
+import { Target, MousePointer2, Trophy, Crosshair, Zap, UserCheck, Plus, Minus, Coins, ArrowUpCircle } from 'lucide-react'
 
 export default function HostLobby() {
   const params = useParams()
@@ -28,6 +28,16 @@ export default function HostLobby() {
       .from('global_settings')
       .update({ jackpot_amount: newAmount })
       .eq('id', 'poker_config')
+  }
+
+  // ADDED: Handle All-In count
+  const handleAllIn = async (playerId: string, currentCount: number) => {
+    const { error } = await supabase
+      .from('player_results')
+      .update({ all_in_count: (currentCount || 0) + 1 })
+      .eq('id', playerId)
+    
+    if (error) console.error("DEBUG ERR: All-in update failed:", error.message)
   }
 
   // NIT RULE: Mark player as having played a hand
@@ -447,9 +457,10 @@ export default function HostLobby() {
                         </p>
                         <div className="flex gap-3">
                           <p className={`text-[10px] font-mono uppercase ${profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {profit >= 0 ? 'Collect' : 'Payout'}: ${Math.abs(profit)}
+                            {profit >= 0 ? 'Collect' : 'Payout'}: ${Math.abs(profit).toFixed(2)}
                           </p>
                           {player.bounty_earned > 0 && <p className="text-[10px] font-mono uppercase text-yellow-500">Bounties: ${player.bounty_earned}</p>}
+                          {(player.all_in_count || 0) > 0 && <p className="text-[10px] font-mono uppercase text-purple-500">All-Ins: {player.all_in_count}</p>}
                         </div>
                       </div>
                     </div>
@@ -457,8 +468,9 @@ export default function HostLobby() {
                        <span className="text-zinc-600 font-mono text-[10px] uppercase">Final Chips:</span>
                        <input 
                         type="number"
+                        step="0.01"
                         className="bg-black border border-zinc-800 rounded-xl px-4 py-2 w-24 text-right font-black text-yellow-500 focus:border-yellow-500 outline-none transition-colors"
-                        onChange={(e) => setFinalChips({...finalChips, [player.user_id]: parseInt(e.target.value) || 0})}
+                        onChange={(e) => setFinalChips({...finalChips, [player.user_id]: parseFloat(e.target.value) || 0})}
                       />
                     </div>
                   </div>
@@ -487,11 +499,21 @@ export default function HostLobby() {
                         </div>
                       )}
                     </div>
-                    <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1">
-                      In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span>
+                    <p className="text-zinc-500 text-[10px] uppercase font-mono mt-1 flex gap-3">
+                      <span>In for: <span className="text-white">${(1 + (player.rebuys || 0)) * (sessionData?.buy_in || 0)}</span></span>
+                      {(player.all_in_count || 0) > 0 && <span>All-Ins: <span className="text-purple-500">{player.all_in_count}</span></span>}
                     </p>
                   </div>
                   <div className="flex gap-3">
+                    {/* ALL-IN BUTTON */}
+                    <button 
+                      onClick={() => handleAllIn(player.id, player.all_in_count || 0)} 
+                      className="p-3 rounded-2xl bg-purple-600/10 border border-purple-600/30 text-purple-500 hover:bg-purple-600 hover:text-white transition-all"
+                      title="Mark All-In"
+                    >
+                      <ArrowUpCircle size={16} strokeWidth={3} />
+                    </button>
+
                     {sessionData?.bounty_target_id && sessionData?.bounty_target_id !== player.user_id && (
                       <button onClick={() => handleClaimBounty(player.user_id, player.display_name)} className="p-3 rounded-2xl bg-red-600/20 border border-red-600/40 text-red-500 hover:bg-red-600 hover:text-white transition-all group">
                         <Crosshair size={16} strokeWidth={3} className="group-hover:scale-110" />

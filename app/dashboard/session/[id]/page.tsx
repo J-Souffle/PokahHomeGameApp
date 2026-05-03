@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/client'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Users, Trophy } from 'lucide-react'
+import { ChevronLeft, Users, Trophy, ArrowUpCircle } from 'lucide-react'
 
 export default function SessionDetailPage() {
   const { id: sessionId } = useParams()
@@ -12,9 +12,6 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     async function getSessionDetails() {
-      // 1. Fetch the session info
-      // 2. Separately fetch player results joined with profiles
-      // This is more reliable than one giant nested select
       const { data: session } = await supabase
         .from('poker_sessions')
         .select('*')
@@ -87,7 +84,12 @@ export default function SessionDetailPage() {
                     <span className="text-zinc-800 font-black italic text-2xl">#{i + 1}</span>
                     <div>
                       <p className="font-black uppercase text-lg tracking-tight">{res.profiles?.full_name || 'Unknown Player'}</p>
-                      <p className="text-zinc-600 font-mono text-[10px] uppercase">{res.rebuys} REBUYS</p>
+                      <div className="flex gap-4">
+                        <p className="text-zinc-600 font-mono text-[10px] uppercase">{res.rebuys || 0} REBUYS</p>
+                        <p className="text-purple-500 font-mono text-[10px] uppercase flex items-center gap-1">
+                          <ArrowUpCircle size={10} /> {res.all_in_count || 0} ALL-INS
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">

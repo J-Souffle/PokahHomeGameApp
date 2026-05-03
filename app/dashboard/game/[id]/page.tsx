@@ -70,7 +70,8 @@ export default function PlayerLiveView() {
               clicks: r.click_count || 0,
               bounties: r.bounty_earned || 0,
               isNit: r.has_nit_token,
-              nit_count: r.nit_count || 0
+              nit_count: r.nit_count || 0,
+              all_in_count: r.all_in_count || 0
             }
           }).sort((a, b) => b.profit - a.profit)
           setLeaderboard(ranked)
@@ -288,7 +289,7 @@ export default function PlayerLiveView() {
                   <span className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">Your Net Performance</span>
                   <div className="flex items-baseline gap-1">
                     <p className={`text-7xl font-black tracking-tighter ${myProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {myProfit >= 0 ? '+' : ''}${myProfit}
+                      {myProfit >= 0 ? '+' : ''}${myProfit.toFixed(2)}
                     </p>
                     <span className={`text-xs font-bold uppercase ${myProfit >= 0 ? 'text-green-600/50' : 'text-red-600/50'}`}>USD</span>
                   </div>
@@ -301,25 +302,25 @@ export default function PlayerLiveView() {
             <h3 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-500 mb-6 flex items-center gap-2">
               <Trophy size={14} className="text-yellow-500" /> Room Results
             </h3>
-            <div className="space-y-4">
-              {leaderboard.map((entry, i) => (
-                <div key={i} className={`flex justify-between items-center p-3 rounded-2xl transition-colors ${entry.id === myResult.user_id ? 'bg-zinc-800' : ''}`}>
-                  <div className="flex flex-col">
-                    <span className={`text-sm font-bold uppercase italic flex items-center gap-2 ${entry.id === myResult.user_id ? 'text-white' : 'text-zinc-400'}`}>
-                      {entry.name} {entry.id === clickChampionId && <Trophy size={10} className="text-yellow-500" />}
-                    </span>
-                    <div className="flex gap-2">
-                      <span className={`text-[9px] font-mono uppercase ${entry.id === clickChampionId ? 'text-yellow-500 font-bold' : 'text-zinc-600'}`}>
-                        {entry.clicks} clicks {entry.nit_count > 0 && `• ${entry.nit_count} NIT PENALTIES`}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={`font-mono text-sm font-bold ${entry.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {entry.profit >= 0 ? '+' : ''}${entry.profit}
-                  </span>
-                </div>
-              ))}
-            </div>
+        <div className="space-y-4">
+  {leaderboard.map((entry, i) => (
+    <div key={i} className={`flex justify-between items-center p-3 rounded-2xl transition-colors ${entry.id === myResult.user_id ? 'bg-zinc-800' : ''}`}>
+      <div className="flex flex-col">
+        <span className={`text-sm font-bold uppercase italic flex items-center gap-2 ${entry.id === myResult.user_id ? 'text-white' : 'text-zinc-400'}`}>
+          {entry.name} {entry.id === clickChampionId && <Trophy size={10} className="text-yellow-500" />}
+        </span>
+        <div className="flex gap-2">
+          <span className={`text-[9px] font-mono uppercase ${entry.id === clickChampionId ? 'text-yellow-500 font-bold' : 'text-zinc-600'}`}>
+            {entry.clicks} clicks • {entry.all_in_count || 0} All-Ins • {entry.rebuys || 0} Rebuys {entry.nit_count > 0 && `• ${entry.nit_count} NIT PENALTIES`}
+          </span>
+        </div>
+      </div>
+      <span className={`font-mono text-sm font-bold ${entry.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        {entry.profit >= 0 ? '+' : ''}${entry.profit.toFixed(2)}
+      </span>
+    </div>
+  ))}
+</div>
           </div>
           
           <button onClick={() => router.push('/dashboard')} className="w-full group py-6 bg-white text-black rounded-[2rem] font-black uppercase italic tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all">
