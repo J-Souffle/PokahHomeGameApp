@@ -4,7 +4,7 @@ import { createClient } from '@/lib/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon } from 'lucide-react'
+import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon, ArrowUpCircle } from 'lucide-react'
 import ActivityTicker from '@/components/ActivityTicker'
 
 export default function DashboardPage() {
@@ -25,6 +25,7 @@ export default function DashboardPage() {
       const buyIn = session ? parseFloat(session.buy_in) : DEFAULT_BUY_IN;
       const finalChips = parseFloat(row.final_chips) || 0;
       const rebuys = parseInt(row.rebuys) || 0;
+      const allIns = parseInt(row.all_in_count) || 0;
       
       const totalInvested = buyIn * (1 + rebuys);
       const calculatedProfit = finalChips - totalInvested;
@@ -34,6 +35,7 @@ export default function DashboardPage() {
         session_id: row.session_id, 
         totalInvested: totalInvested, 
         calculatedProfit: calculatedProfit,
+        allIns: allIns,
         is_winner: calculatedProfit > 0
       }
     })
@@ -56,14 +58,13 @@ export default function DashboardPage() {
       if (profileData) setProfile(profileData)
 
       // Fetch Global Jackpot from most recent session
-    // 2. INSERT THE JACKPOT FETCH HERE 
-    const { data: settings } = await supabase
-      .from('global_settings')
-      .select('jackpot_amount')
-      .eq('id', 'poker_config')
-      .single()
+      const { data: settings } = await supabase
+        .from('global_settings')
+        .select('jackpot_amount')
+        .eq('id', 'poker_config')
+        .single()
 
-    if (settings) setGlobalJackpot(settings.jackpot_amount || 0)
+      if (settings) setGlobalJackpot(settings.jackpot_amount || 0)
 
       const { data, error } = await supabase
         .from('player_results')
@@ -72,6 +73,7 @@ export default function DashboardPage() {
             session_id,
             final_chips, 
             rebuys, 
+            all_in_count,
             created_at, 
             user_id,
             poker_sessions (
@@ -99,7 +101,7 @@ export default function DashboardPage() {
   }, [getData])
 
   const stats = useMemo(() => {
-    if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0, biggestWin: 0, comeback: 0, trend: 0 }
+    if (results.length === 0) return { total: 0, totalBuyIns: 0, winRate: "0.0", count: 0, wins: 0, losses: 0, bestWin: 0, worstLoss: 0, biggestWin: 0, comeback: 0, trend: 0, allInFreq: 0 }
     
     const total = results.reduce((acc, row) => acc + row.calculatedProfit, 0)
     const totalBuyIns = results.reduce((acc, row) => acc + row.totalInvested, 0)
@@ -116,6 +118,10 @@ export default function DashboardPage() {
     const lastFive = results.slice(-5)
     const trend = lastFive.reduce((acc, r) => acc + r.calculatedProfit, 0)
 
+    // All-In Frequency Calculation
+    const totalAllIns = results.reduce((acc, r) => acc + (r.allIns || 0), 0)
+    const allInFreq = results.length > 0 ? (totalAllIns / results.length).toFixed(1) : 0
+
     return {
       total,
       totalBuyIns,
@@ -127,7 +133,8 @@ export default function DashboardPage() {
       worstLoss,
       biggestWin,
       comeback: bestComeback,
-      trend
+      trend,
+      allInFreq
     }
   }, [results])
 
@@ -183,7 +190,6 @@ export default function DashboardPage() {
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
   <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
   
-  {/* Added relative position and ensured explicit height/min-height for Recharts calculation */}
   <div className="w-full relative" style={{ height: '350px', minHeight: '350px' }}>
     {isMounted && results.length > 0 && (
       <ResponsiveContainer 
@@ -271,7 +277,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* NEW: Global Jackpot Card */}
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-yellow-500/30 shadow-sm relative overflow-hidden">
               <p className="text-yellow-500 text-sm font-bold uppercase tracking-widest flex items-center gap-2">
                 <Trophy size={16} /> Current Jackpot
@@ -294,7 +299,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
              <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
                 <div className="w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">
                   <Trophy size={20} />
@@ -322,6 +327,15 @@ export default function DashboardPage() {
                   <p className={`text-xl font-black italic ${stats.trend >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                     {stats.trend >= 0 ? '+' : ''}${stats.trend.toFixed(2)}
                   </p>
+                </div>
+             </div>
+             <div className="bg-zinc-900/30 p-6 rounded-3xl border border-zinc-800/50 flex items-center gap-6">
+                <div className="w-12 h-12 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-500">
+                  <ArrowUpCircle size={20} />
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest">Avg All-Ins</p>
+                  <p className="text-xl font-black italic text-white">{stats.allInFreq}</p>
                 </div>
              </div>
           </div>

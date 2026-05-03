@@ -1,3 +1,4 @@
+
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
@@ -27,7 +28,7 @@ export default async function LeaderboardPage() {
       user_id, 
       final_chips,
       rebuys,
-      all_in,
+      all_in_count,
       poker_sessions (buy_in),
       profiles (*)
     `),
@@ -37,15 +38,15 @@ export default async function LeaderboardPage() {
   const leaderboard = resultsData.data;
   const settings = settingsData.data;
 
-  // Extract settings values
   const jackpotWinner = settings?.jackpot_winner || '---';
-  // Updated source to pull from record_win_amount
   const jackpotAmount = settings?.record_win_amount || 0; 
-  const recordWinAmount = settings?.record_win_amount || 0;
 
   if (resultsData.error) console.error("Leaderboard Error:", resultsData.error)
 
   const totals = leaderboard?.reduce((acc: Record<string, PlayerStats>, curr: any) => {
+    // Debugging: If this prints 0 or undefined for 'all_in', your database column is empty or named differently
+    console.log("Row Data Processing:", { user: curr.user_id, all_in: curr.all_in });
+    
     const id = curr.user_id;
     if (!acc[id]) {
       const p = curr.profiles;
@@ -64,13 +65,17 @@ export default async function LeaderboardPage() {
 
     const buyIn = Number(curr.poker_sessions?.buy_in || 5);
     const rebuys = Number(curr.rebuys || 0);
-    const isAllIn = curr.all_in ? 1 : 0; // Track all-in count
+    
+    // Updated: Using Number() safely converts true/1 to 1, and false/null to 0
+    // In your reduce function:
+const allInCount = Number(curr.all_in_count || 0); // Change this
+    
     const profit = Number(curr.final_chips || 0) - (buyIn * (1 + rebuys));
 
     acc[id].totalProfit += profit;
     acc[id].games += 1;
     acc[id].rebuys += rebuys;
-    acc[id].totalAllIns += isAllIn;
+    acc[id].totalAllIns += allInCount;
     
     if (rebuys >= 2 && profit > acc[id].biggestComeback) {
       acc[id].biggestComeback = profit;
@@ -157,13 +162,11 @@ export default async function LeaderboardPage() {
                 <td className="p-8 text-center font-black italic text-2xl text-zinc-700 group-hover:text-yellow-500 transition-colors">#{index + 1}</td>
                 <td className="p-8">
                   <p className="font-black text-xl italic uppercase text-zinc-200">{player.name}</p>
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 mt-1">
                      <p className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest">{player.rebuys} Rebuys</p>
-                     {player.totalAllIns > 0 && (
-                       <p className="text-[10px] text-yellow-500 font-mono uppercase tracking-widest flex items-center gap-1">
-                         <Zap size={10} /> {player.totalAllIns} All-In
-                       </p>
-                     )}
+                     <p className={`text-[10px] font-mono uppercase tracking-widest flex items-center gap-1 ${player.totalAllIns > 0 ? 'text-yellow-500' : 'text-zinc-700'}`}>
+                       <Zap size={10} /> {player.totalAllIns} All-In
+                     </p>
                   </div>
                 </td>
                 <td className="p-8 text-center font-mono text-zinc-400 font-bold">{player.games}</td>
