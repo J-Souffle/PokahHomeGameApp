@@ -1,4 +1,3 @@
-
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
@@ -44,7 +43,6 @@ export default async function LeaderboardPage() {
   if (resultsData.error) console.error("Leaderboard Error:", resultsData.error)
 
   const totals = leaderboard?.reduce((acc: Record<string, PlayerStats>, curr: any) => {
-    // Debugging: If this prints 0 or undefined for 'all_in', your database column is empty or named differently
     console.log("Row Data Processing:", { user: curr.user_id, all_in: curr.all_in });
     
     const id = curr.user_id;
@@ -65,11 +63,7 @@ export default async function LeaderboardPage() {
 
     const buyIn = Number(curr.poker_sessions?.buy_in || 5);
     const rebuys = Number(curr.rebuys || 0);
-    
-    // Updated: Using Number() safely converts true/1 to 1, and false/null to 0
-    // In your reduce function:
-const allInCount = Number(curr.all_in_count || 0); // Change this
-    
+    const allInCount = Number(curr.all_in_count || 0); 
     const profit = Number(curr.final_chips || 0) - (buyIn * (1 + rebuys));
 
     acc[id].totalProfit += profit;
@@ -107,7 +101,7 @@ const allInCount = Number(curr.all_in_count || 0); // Change this
       </header>
 
       {/* Milestone Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12">
         <div className="bg-zinc-900/50 border border-zinc-800 p-6 md:p-8 rounded-[2rem]">
           <div className="w-12 h-12 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500 mb-6">
             <Trophy size={24} />
@@ -145,33 +139,45 @@ const allInCount = Number(curr.all_in_count || 0); // Change this
         </div>
       </div>
 
-      {/* Main Leaderboard */}
+      {/* Main Leaderboard Table - Fluid Layout */}
       <div className="bg-zinc-900/40 rounded-[2rem] border border-zinc-800 overflow-hidden shadow-2xl">
-        <table className="w-full text-left border-collapse hidden md:table">
+        <table className="w-full text-left border-collapse">
           <thead>
             <tr className="text-zinc-600 text-[10px] uppercase tracking-[0.2em] border-b border-zinc-800">
-              <th className="p-8 font-black text-center w-20">Rank</th>
-              <th className="p-8 font-black">Agent</th>
-              <th className="p-8 font-black text-center">Sessions</th>
-              <th className="p-8 font-black text-right">Lifetime Profit</th>
+              <th className="p-4 md:p-8 font-black text-center w-12 md:w-20">Rank</th>
+              <th className="p-4 md:p-8 font-black">Agent</th>
+              <th className="p-4 md:p-8 font-black text-center hidden sm:table-cell">Sessions</th>
+              <th className="p-4 md:p-8 font-black text-right">Lifetime Profit</th>
             </tr>
           </thead>
           <tbody>
             {sortedLeaderboard.map((player, index) => (
               <tr key={player.name} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-colors group">
-                <td className="p-8 text-center font-black italic text-2xl text-zinc-700 group-hover:text-yellow-500 transition-colors">#{index + 1}</td>
-                <td className="p-8">
-                  <p className="font-black text-xl italic uppercase text-zinc-200">{player.name}</p>
-                  <div className="flex gap-4 mt-1">
-                     <p className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest">{player.rebuys} Rebuys</p>
-                     <p className={`text-[10px] font-mono uppercase tracking-widest flex items-center gap-1 ${player.totalAllIns > 0 ? 'text-yellow-500' : 'text-zinc-700'}`}>
+                <td className="p-4 md:p-8 text-center font-black italic text-lg md:text-2xl text-zinc-700 group-hover:text-yellow-500 transition-colors">
+                  #{index + 1}
+                </td>
+                <td className="p-4 md:p-8">
+                  <p className="font-black text-base md:text-xl italic uppercase text-zinc-200 truncate max-w-[140px] xs:max-w-none">
+                    {player.name}
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                     <p className="text-[9px] md:text-[10px] text-zinc-600 font-mono uppercase tracking-widest">
+                       {player.rebuys} Rebuys
+                     </p>
+                     {/* Mobile fallback indicator for total games */}
+                     <p className="text-[9px] md:text-[10px] text-zinc-600 font-mono uppercase tracking-widest sm:hidden">
+                       {player.games} Games
+                     </p>
+                     <p className={`text-[9px] md:text-[10px] font-mono uppercase tracking-widest flex items-center gap-1 ${player.totalAllIns > 0 ? 'text-yellow-500' : 'text-zinc-700'}`}>
                        <Zap size={10} /> {player.totalAllIns} All-In
                      </p>
                   </div>
                 </td>
-                <td className="p-8 text-center font-mono text-zinc-400 font-bold">{player.games}</td>
-                <td className="p-8 text-right">
-                  <span className={`font-black text-3xl ${player.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                <td className="p-4 md:p-8 text-center font-mono text-zinc-400 font-bold hidden sm:table-cell">
+                  {player.games}
+                </td>
+                <td className="p-4 md:p-8 text-right">
+                  <span className={`font-black text-xl md:text-3xl ${player.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                     {player.totalProfit >= 0 ? `+$${player.totalProfit.toFixed(2)}` : `-$${Math.abs(player.totalProfit).toFixed(2)}`}
                   </span>
                 </td>
