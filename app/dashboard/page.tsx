@@ -4,8 +4,9 @@ import { createClient } from '@/lib/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon, ArrowUpCircle } from 'lucide-react'
+import { Trophy, TrendingUp, Zap, ChevronRight, User as UserIcon, ArrowUpCircle, ClipboardList } from 'lucide-react'
 import ActivityTicker from '@/components/ActivityTicker'
+import RsvpModal from '@/components/RsvpModal'
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -15,7 +16,7 @@ export default function DashboardPage() {
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
-  const [globalJackpot, setGlobalJackpot] = useState(0) // New State for Jackpot
+  const [globalJackpot, setGlobalJackpot] = useState(0)
 
   const handleTransform = useCallback((rawData: any[]) => {
     const DEFAULT_BUY_IN = 5; 
@@ -48,7 +49,6 @@ export default function DashboardPage() {
       if (!authUser) return (window.location.href = '/login')
       setUser(authUser)
 
-      // Fetch Profile for Display Name
       const { data: profileData } = await supabase
         .from('profiles')
         .select('display_name, full_name, role')
@@ -57,7 +57,6 @@ export default function DashboardPage() {
       
       if (profileData) setProfile(profileData)
 
-      // Fetch Global Jackpot from most recent session
       const { data: settings } = await supabase
         .from('global_settings')
         .select('jackpot_amount')
@@ -118,8 +117,7 @@ export default function DashboardPage() {
     const lastFive = results.slice(-5)
     const trend = lastFive.reduce((acc, r) => acc + r.calculatedProfit, 0)
 
-    // All-In Frequency Calculation
-    const totalAllIns = results.reduce((acc, r) => acc + (r.allIns || 0), 0)
+    const totalAllIns = results.reduce((acc, row) => acc + (row.allIns || 0), 0)
     const allInFreq = results.length > 0 ? (totalAllIns / results.length).toFixed(1) : 0
 
     return {
@@ -168,11 +166,15 @@ export default function DashboardPage() {
           <p className="text-zinc-500 text-[10px] mt-2 font-mono uppercase tracking-widest">{user?.email}</p>
         </div>
         
-       <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3">
+          <RsvpModal userId={user?.id} />
           <Link href="/dashboard/leaderboard" className="bg-zinc-900 border border-zinc-800 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-zinc-800 transition-all">🏆 LEADERBOARD</Link>
           <Link href="/dashboard/join" className="bg-yellow-500 text-black px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-yellow-400 transition-all">🚀 JOIN LOBBY</Link>
           {profile?.role === 'host' && (
             <>
+              <Link href="/dashboard/rsvps" className="bg-purple-600 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-purple-500 transition-all flex items-center gap-1">
+                📋 RSVPs
+              </Link>
               <Link href="/dashboard/host" className="bg-blue-600 px-6 py-3 rounded-2xl font-black text-[10px] tracking-widest hover:bg-blue-500 transition-all">
                 📡 LIVE CONTROL
               </Link>
@@ -188,84 +190,83 @@ export default function DashboardPage() {
       {results.length > 0 ? (
         <>
           <div className="mb-8 bg-zinc-900/30 p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-2xl relative w-full overflow-hidden">
-  <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
-  
-  <div className="w-full relative" style={{ height: '350px', minHeight: '350px' }}>
-    {isMounted && results.length > 0 && (
-      <ResponsiveContainer 
-        width="100%" 
-        height="100%" 
-        minWidth={0} 
-        minHeight={0} 
-        key={`chart-${results.length}`}
-      >
-        <LineChart data={chartData} margin={{ left: -20, right: 10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
-          <XAxis 
-            dataKey="u_id" 
-            stroke="#52525b" 
-            fontSize={10} 
-            tickLine={false} 
-            axisLine={false} 
-            tickFormatter={(idx) => chartData[idx]?.displayDate || ''}
-          />
-          <YAxis 
-            stroke="#52525b" 
-            fontSize={10} 
-            tickLine={false} 
-            axisLine={false} 
-            dx={-10} 
-            tickFormatter={(val) => `$${val}`} 
-          />
-          <Tooltip 
-            contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
-            itemStyle={{ fontWeight: '900' }}
-            separator=""
-            labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
-            formatter={(value: any, name: any, props: any) => {
-              const { bankroll, sessionNet } = props.payload;
-              
-              const content = (
-                <div className="flex flex-col gap-1 text-left">
-                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-                    Session Impact
-                  </p>
-                  <p className={`text-lg font-black italic ${sessionNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {sessionNet >= 0 ? `+$${sessionNet.toFixed(2)}` : `-$${Math.abs(sessionNet).toFixed(2)}`}
-                  </p>
-                  <div className="h-px bg-zinc-800 my-1" />
-                  <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-                    Total Bankroll
-                  </p>
-                  <p className="text-xl font-black italic text-white">
-                    ${bankroll.toFixed(2)}
-                  </p>
-                </div>
-              );
+            <h3 className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-8">Bankroll Trajectory</h3>
+            
+            <div className="w-full relative" style={{ height: '350px', minHeight: '350px' }}>
+              {isMounted && results.length > 0 && (
+                <ResponsiveContainer 
+                  width="100%" 
+                  height="100%" 
+                  minWidth={0} 
+                  minHeight={0} 
+                  key={`chart-${results.length}`}
+                >
+                  <LineChart data={chartData} margin={{ left: -20, right: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
+                    <XAxis 
+                      dataKey="u_id" 
+                      stroke="#52525b" 
+                      fontSize={10} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tickFormatter={(idx) => chartData[idx]?.displayDate || ''}
+                    />
+                    <YAxis 
+                      stroke="#52525b" 
+                      fontSize={10} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      dx={-10} 
+                      tickFormatter={(val) => `$${val}`} 
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '16px' }}
+                      itemStyle={{ fontWeight: '900' }}
+                      separator=""
+                      labelFormatter={(idx) => chartData[idx]?.displayDate || ''}
+                      formatter={(value: any, name: any, props: any) => {
+                        const { bankroll, sessionNet } = props.payload;
+                        
+                        const content = (
+                          <div className="flex flex-col gap-1 text-left">
+                            <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                              Session Impact
+                            </p>
+                            <p className={`text-lg font-black italic ${sessionNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {sessionNet >= 0 ? `+$${sessionNet.toFixed(2)}` : `-$${Math.abs(sessionNet).toFixed(2)}`}
+                            </p>
+                            <div className="h-px bg-zinc-800 my-1" />
+                            <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                              Total Bankroll
+                            </p>
+                            <p className="text-xl font-black italic text-white">
+                              ${bankroll.toFixed(2)}
+                            </p>
+                          </div>
+                        );
 
-              return [content, name];
-            }}
-          />
-          <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
-          <Line 
-            type="monotone" 
-            dataKey="bankroll" 
-            stroke="#eab308" 
-            strokeWidth={5} 
-            dot={{ r: 6, fill: '#09090b', stroke: '#eab308', strokeWidth: 2 }} 
-            activeDot={{ r: 8, fill: '#fff', stroke: '#eab308', strokeWidth: 0 }}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    )}
-  </div>
-</div>
+                        return [content, name];
+                      }}
+                    />
+                    <ReferenceLine y={0} stroke="#27272a" strokeWidth={2} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="bankroll" 
+                      stroke="#eab308" 
+                      strokeWidth={5} 
+                      dot={{ r: 6, fill: '#09090b', stroke: '#eab308', strokeWidth: 2 }} 
+                      activeDot={{ r: 8, fill: '#fff', stroke: '#eab308', strokeWidth: 0 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
 
-<div className="m-4"><ActivityTicker /></div>
+          <div className="m-4"><ActivityTicker /></div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            
             <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 shadow-sm relative overflow-hidden">
               <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Total Net Profit</p>
               <p className={`text-5xl md:text-4xl font-black mt-2 tracking-tighter ${stats.total >= 0 ? 'text-green-500' : 'text-red-500'}`}>
